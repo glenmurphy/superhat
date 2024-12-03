@@ -38,7 +38,7 @@ fn main() {
     let mut button_press_times: HashMap<u32, Instant> = HashMap::new();
 
     loop {
-        while let Some(Event { event, .. }) = gilrs.next_event() {
+        while let Some(Event { event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
             match event {
                 EventType::ButtonPressed(_, code) => {
                     let index = code.into_u32();
@@ -62,16 +62,16 @@ fn main() {
             }
         }
 
-        if let AppState::MfdSelected { last_input_time, mfd, .. } = &app_state {
-            if last_input_time.elapsed() > Duration::from_secs(2) {
-                println!("Timeout occurred. Resetting selection.");
-                app_state = AppState::MfdSelected {
-                    mfd: mfd.clone(),
-                    side: None,
-                    inputs: Vec::new(),
-                    last_input_time: Instant::now(),
-                };
-            }
+        let AppState::MfdSelected { last_input_time, mfd, side, .. } = &app_state;
+        
+        if side.is_some() && last_input_time.elapsed() > Duration::from_secs(2) {
+            println!("Timeout occurred. Resetting selection.");
+            app_state = AppState::MfdSelected {
+                mfd: mfd.clone(),
+                side: None,
+                inputs: Vec::new(),
+                last_input_time: Instant::now(),
+            };
         }
     }
 }
@@ -109,28 +109,28 @@ fn handle_long_press(direction: Direction, app_state: &mut AppState) {
 }
 
 fn handle_input(direction: Direction, app_state: &mut AppState) {
-    if let AppState::MfdSelected {
+    let AppState::MfdSelected {
         ref mfd,
         ref mut side,
         ref mut inputs,
         ref mut last_input_time,
-    } = app_state {
-        *last_input_time = Instant::now();
-        
-        if side.is_none() {
-            *side = Some(direction);
-            println!("Side Selected: {:?}", direction);
-        } else {
-            inputs.push(direction);
-            if let Some(button_num) = calculate_button_number(mfd.clone(), side.unwrap(), inputs.as_slice()) {
-                println!("Pressed button {}", button_num);
-                *side = None;
-                inputs.clear();
-            } else if !could_lead_to_valid_button(side.unwrap(), inputs.as_slice()) {
-                println!("Invalid sequence detected. Resetting selection.");
-                *side = None;
-                inputs.clear();
-            }
+    } = app_state;
+
+    *last_input_time = Instant::now();
+    
+    if side.is_none() {
+        *side = Some(direction);
+        println!("Side Selected: {:?}", direction);
+    } else {
+        inputs.push(direction);
+        if let Some(button_num) = calculate_button_number(mfd.clone(), side.unwrap(), inputs.as_slice()) {
+            println!("Pressed button {}", button_num);
+            *side = None;
+            inputs.clear();
+        } else if !could_lead_to_valid_button(side.unwrap(), inputs.as_slice()) {
+            println!("Invalid sequence detected. Resetting selection.");
+            *side = None;
+            inputs.clear();
         }
     }
 }
@@ -144,12 +144,7 @@ fn calculate_button_number(
         return None;
     }
 
-    let button_position = match side {
-        Direction::Up => calculate_top_side_button(inputs),
-        Direction::Right => calculate_right_side_button(inputs),
-        Direction::Down => calculate_bottom_side_button(inputs),
-        Direction::Left => calculate_left_side_button(inputs),
-    }?;
+    let button_position = calculate_side_button(side, inputs)?;
 
     // Calculate global button number
     let base_number = match side {
@@ -165,114 +160,57 @@ fn calculate_button_number(
         MfdState::Inactive => return None,
     };
 
-    Some(base_number + button_position + mfd_offset + 1) // +1 to make it 1-indexed
+    Some(base_number + button_position + mfd_offset + 1)
 }
 
-fn calculate_top_side_button(inputs: &[Direction]) -> Option<u8> {
-    match inputs {
-        [Direction::Left, Direction::Left] => Some(0),
-        [Direction::Left, Direction::Up] => Some(1),
-        [Direction::Up] => Some(2),
-        [Direction::Right, Direction::Up] => Some(3),
-        [Direction::Right, Direction::Right] => Some(4),
-        _ => None,
+fn calculate_side_button(side: Direction, inputs: &[Direction]) -> Option<u8> {
+    // For any side, the middle button is always a single press in that direction
+    if inputs.len() == 1 && inputs[0] == side {
+        return Some(2);
     }
-}
 
-fn calculate_right_side_button(inputs: &[Direction]) -> Option<u8> {
-    match inputs {
-        [Direction::Up, Direction::Up] => Some(0),
-        [Direction::Up, Direction::Right] => Some(1),
-        [Direction::Right] => Some(2),
-        [Direction::Down, Direction::Right] => Some(3),
-        [Direction::Down, Direction::Down] => Some(4),
-        _ => None,
-    }
-}
+    // The "left" and "right" directions relative to the selected side
+    let (left_dir, right_dir) = get_relative_directions(side);
 
-fn calculate_bottom_side_button(inputs: &[Direction]) -> Option<u8> {
-    match inputs {
-        [Direction::Left, Direction::Left] => Some(0),
-        [Direction::Left, Direction::Down] => Some(1),
-        [Direction::Down] => Some(2),
-        [Direction::Right, Direction::Down] => Some(3),
-        [Direction::Right, Direction::Right] => Some(4),
-        _ => None,
-    }
-}
-
-fn calculate_left_side_button(inputs: &[Direction]) -> Option<u8> {
-    match inputs {
-        [Direction::Up, Direction::Up] => Some(0),
-        [Direction::Up, Direction::Left] => Some(1),
-        [Direction::Left] => Some(2),
-        [Direction::Down, Direction::Left] => Some(3),
-        [Direction::Down, Direction::Down] => Some(4),
+    match (inputs.get(0), inputs.get(1)) {
+        // Outer buttons using relative directions
+        (Some(&d1), Some(&d2)) if d1 == left_dir && d2 == left_dir => Some(0),
+        (Some(&d1), Some(&d2)) if d1 == left_dir && d2 == side => Some(1),
+        (Some(&d1), Some(&d2)) if d1 == right_dir && d2 == side => Some(3),
+        (Some(&d1), Some(&d2)) if d1 == right_dir && d2 == right_dir => Some(4),
         _ => None,
     }
 }
 
 fn could_lead_to_valid_button(side: Direction, inputs: &[Direction]) -> bool {
+    if inputs.is_empty() {
+        return true;
+    }
+
+    // Single press of the side direction is always valid (middle button)
+    if inputs.len() == 1 && inputs[0] == side {
+        return true;
+    }
+
+    let (left_dir, right_dir) = get_relative_directions(side);
+
+    match (inputs.get(0), inputs.get(1)) {
+        // Single press that could lead to valid double press
+        (Some(&d), None) if d == left_dir || d == right_dir => true,
+        
+        // Valid double presses
+        (Some(&d1), Some(&d2)) if d1 == left_dir && (d2 == left_dir || d2 == side) => true,
+        (Some(&d1), Some(&d2)) if d1 == right_dir && (d2 == right_dir || d2 == side) => true,
+        
+        _ => false,
+    }
+}
+
+fn get_relative_directions(side: Direction) -> (Direction, Direction) {
     match side {
-        Direction::Up => could_be_valid_top_button(inputs),
-        Direction::Right => could_be_valid_right_button(inputs),
-        Direction::Down => could_be_valid_bottom_button(inputs),
-        Direction::Left => could_be_valid_left_button(inputs),
-    }
-}
-
-fn could_be_valid_top_button(inputs: &[Direction]) -> bool {
-    match inputs {
-        [] => true, // Empty sequence could still lead to valid button
-        [Direction::Left] => true, // Could be left-left or left-up
-        [Direction::Left, Direction::Left] => true, // Valid button
-        [Direction::Left, Direction::Up] => true, // Valid button
-        [Direction::Up] => true, // Valid button (middle)
-        [Direction::Right] => true, // Could be right-right or right-up
-        [Direction::Right, Direction::Right] => true, // Valid button
-        [Direction::Right, Direction::Up] => true, // Valid button
-        _ => false, // Any other sequence cannot lead to valid button
-    }
-}
-
-fn could_be_valid_right_button(inputs: &[Direction]) -> bool {
-    match inputs {
-        [] => true,
-        [Direction::Up] => true,
-        [Direction::Up, Direction::Up] => true,
-        [Direction::Up, Direction::Right] => true,
-        [Direction::Right] => true,
-        [Direction::Down] => true,
-        [Direction::Down, Direction::Down] => true,
-        [Direction::Down, Direction::Right] => true,
-        _ => false,
-    }
-}
-
-fn could_be_valid_bottom_button(inputs: &[Direction]) -> bool {
-    match inputs {
-        [] => true,
-        [Direction::Left] => true,
-        [Direction::Left, Direction::Left] => true,
-        [Direction::Left, Direction::Down] => true,
-        [Direction::Down] => true,
-        [Direction::Right] => true,
-        [Direction::Right, Direction::Right] => true,
-        [Direction::Right, Direction::Down] => true,
-        _ => false,
-    }
-}
-
-fn could_be_valid_left_button(inputs: &[Direction]) -> bool {
-    match inputs {
-        [] => true,
-        [Direction::Up] => true,
-        [Direction::Up, Direction::Up] => true,
-        [Direction::Up, Direction::Left] => true,
-        [Direction::Left] => true,
-        [Direction::Down] => true,
-        [Direction::Down, Direction::Down] => true,
-        [Direction::Down, Direction::Left] => true,
-        _ => false,
+        Direction::Up => (Direction::Left, Direction::Right),
+        Direction::Right => (Direction::Up, Direction::Down),
+        Direction::Down => (Direction::Right, Direction::Left),
+        Direction::Left => (Direction::Down, Direction::Up),
     }
 }
