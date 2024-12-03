@@ -48,22 +48,41 @@ const BUTTON_LEFT: u32 = 26;
 const TIMEOUT_DURATION: Duration = Duration::from_millis(1500);
 const LONGPRESS_DURATION: Duration = Duration::from_millis(500);
 
-fn handle_input_event(
-    event_type: InputEventType,
-    direction: Direction,
-    app_state: &mut AppState,
-) {
-    match event_type {
-        InputEventType::ShortPress => handle_short_press(direction, app_state),
-        InputEventType::LongPress => handle_long_press(direction, app_state),
-        InputEventType::Release => handle_release(app_state),
-    }
+enum InputEventType {
+    ButtonDown,    // When button is first pressed
+    ButtonUp,      // When button is released
+    LongPress,     // When button has been held long enough
 }
 
-enum InputEventType {
-    ShortPress,
-    LongPress,
-    Release,
+fn handle_input_event(
+    event_type: InputEventType,
+    button_index: u32,
+    app_state: &mut AppState,
+) {
+    let direction = match map_index_to_direction(button_index) {
+        Some(dir) => dir,
+        None => return, // Invalid button index
+    };
+
+    match (event_type, &*app_state) {
+        // Handle initial side selection on button release
+        (InputEventType::ButtonUp, AppState::WaitingForSide { .. }) => {
+            handle_short_press(direction, app_state)
+        },
+        // Handle subsequent button presses immediately
+        (InputEventType::ButtonDown, AppState::WaitingForButton { .. }) => {
+            handle_short_press(direction, app_state)
+        },
+        // Handle long press for MFD selection
+        (InputEventType::LongPress, _) => {
+            handle_long_press(direction, app_state)
+        },
+        // Handle button release cleanup
+        (InputEventType::ButtonUp, _) => {
+            handle_release(app_state)
+        },
+        _ => {} // Ignore other state combinations
+    }
 }
 
 fn handle_short_press(direction: Direction, app_state: &mut AppState) {
@@ -95,11 +114,8 @@ fn handle_short_press(direction: Direction, app_state: &mut AppState) {
                 };
             }
         }
-        AppState::ButtonPressed { .. } => {
-            // Ignore inputs while button is pressed
-        }
-        AppState::InvalidSequence { .. } => {
-            // Ignore inputs while in invalid sequence state
+        AppState::ButtonPressed { .. } | AppState::InvalidSequence { .. } => {
+            // Ignore inputs while button is pressed or in invalid sequence state
         }
     }
 }
@@ -174,10 +190,8 @@ async fn main() {
             // Check for long press duration on active buttons
             for (&index, &press_time) in button_press_times.iter() {
                 if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
-                    if let Some(direction) = map_index_to_direction(index) {
-                        handle_input_event(InputEventType::LongPress, direction, &mut app_state);
-                        long_press_detected = true;
-                    }
+                    handle_input_event(InputEventType::LongPress, index, &mut app_state);
+                    long_press_detected = true;
                 }
             }
 
@@ -185,26 +199,15 @@ async fn main() {
                 EventType::ButtonPressed(_, code) => {
                     let index = code.into_u32();
                     button_press_times.insert(index, Instant::now());
-                    
-                    if let Some(direction) = map_index_to_direction(index) {
-                        if let AppState::WaitingForButton { .. } = app_state {
-                            handle_input_event(InputEventType::ShortPress, direction, &mut app_state);
-                        }
-                    }
+                    handle_input_event(InputEventType::ButtonDown, index, &mut app_state);
                 }
                 EventType::ButtonReleased(_, code) => {
                     let index = code.into_u32();
                     button_press_times.remove(&index);
                     
-                    if let Some(direction) = map_index_to_direction(index) {
-                        if !long_press_detected {
-                            if let AppState::WaitingForSide { .. } = app_state {
-                                handle_input_event(InputEventType::ShortPress, direction, &mut app_state);
-                            }
-                        }
+                    if !long_press_detected {
+                        handle_input_event(InputEventType::ButtonUp, index, &mut app_state);
                     }
-                    
-                    handle_input_event(InputEventType::Release, Direction::Up, &mut app_state);
                     
                     // Reset long press detection when all buttons are released
                     if button_press_times.is_empty() {
