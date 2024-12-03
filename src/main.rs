@@ -1,7 +1,9 @@
 use gilrs::{Gilrs, Event, EventType};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use winky::{self, Key};
+
+mod mfd_keys;
+use mfd_keys::{press_button, release_button};
 
 #[derive(Debug, PartialEq, Clone)]
 enum MfdState {
@@ -32,6 +34,9 @@ enum AppState {
         mfd: MfdState,
         button_number: u8,
     },
+    InvalidSequence {
+        mfd: MfdState,
+    },
 }
 
 const DEVICE_ID: u32 = 1;
@@ -40,153 +45,62 @@ const BUTTON_RIGHT: u32 = 24;
 const BUTTON_DOWN: u32 = 25;
 const BUTTON_LEFT: u32 = 26;
 
-static MFD_KEYS: &[&[Key]] = &[
-    &[Key::Control, Key::Alt, Key::Num1],
-    &[Key::Control, Key::Alt, Key::Num2], 
-    &[Key::Control, Key::Alt, Key::Num3],
-    &[Key::Control, Key::Alt, Key::Num4],
-    &[Key::Control, Key::Alt, Key::Num5],
-
-    &[Key::Control, Key::Alt, Key::Num6],
-    &[Key::Control, Key::Alt, Key::Num7],
-    &[Key::Control, Key::Alt, Key::Num8],
-    &[Key::Control, Key::Alt, Key::Num9],
-    &[Key::Control, Key::Alt, Key::Num0],
-
-    &[Key::Control, Key::Alt, Key::Numpad1],
-    &[Key::Control, Key::Alt, Key::Numpad2], 
-    &[Key::Control, Key::Alt, Key::Numpad3],
-    &[Key::Control, Key::Alt, Key::Numpad4],
-    &[Key::Control, Key::Alt, Key::Numpad5],
-    
-    &[Key::Control, Key::Alt, Key::Numpad6],
-    &[Key::Control, Key::Alt, Key::Numpad7], 
-    &[Key::Control, Key::Alt, Key::Numpad8],
-    &[Key::Control, Key::Alt, Key::Numpad9],
-    &[Key::Control, Key::Alt, Key::Numpad0],
-
-    &[Key::Shift, Key::Alt, Key::Num1],
-    &[Key::Shift, Key::Alt, Key::Num2], 
-    &[Key::Shift, Key::Alt, Key::Num3],
-    &[Key::Shift, Key::Alt, Key::Num4],
-    &[Key::Shift, Key::Alt, Key::Num5],
-
-    &[Key::Shift, Key::Alt, Key::Num6],
-    &[Key::Shift, Key::Alt, Key::Num7],
-    &[Key::Shift, Key::Alt, Key::Num8],
-    &[Key::Shift, Key::Alt, Key::Num9],
-    &[Key::Shift, Key::Alt, Key::Num0],
-
-    &[Key::Shift, Key::Alt, Key::Numpad1],
-    &[Key::Shift, Key::Alt, Key::Numpad2], 
-    &[Key::Shift, Key::Alt, Key::Numpad3],
-    &[Key::Shift, Key::Alt, Key::Numpad4],
-    &[Key::Shift, Key::Alt, Key::Numpad5],
-    
-    &[Key::Shift, Key::Alt, Key::Numpad6],
-    &[Key::Shift, Key::Alt, Key::Numpad7], 
-    &[Key::Shift, Key::Alt, Key::Numpad8],
-    &[Key::Shift, Key::Alt, Key::Numpad9],
-    &[Key::Shift, Key::Alt, Key::Numpad0],
-];
-
 const TIMEOUT_DURATION: Duration = Duration::from_millis(1500);
 const LONGPRESS_DURATION: Duration = Duration::from_millis(500);
 
-#[tokio::main]
-async fn main() {
-    let mut gilrs = Gilrs::new().unwrap();
-    let mut app_state = AppState::WaitingForSide {
-        mfd: MfdState::LeftMfd,
-    };
-    let mut button_press_times: HashMap<u32, Instant> = HashMap::new();
-    let mut long_press_detected: bool = false;
-
-    loop {
-        while let Some(Event { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
-            let gamepad_id = u32::try_from(usize::from(id)).unwrap();
-            if gamepad_id != DEVICE_ID {
-                continue;
-            }
-
-            // Check for long press duration on active buttons
-            for (&index, &press_time) in button_press_times.iter() {
-                if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
-                    if let Some(direction) = map_index_to_direction(index) {
-                        handle_long_press(direction, &mut app_state);
-                        long_press_detected = true;
-                    }
-                }
-            }
-
-            match event {
-                EventType::ButtonPressed(_, code) => {
-                    let index = code.into_u32();
-                    button_press_times.insert(index, Instant::now());
-                    
-                    // Handle immediate button presses
-                    if let Some(direction) = map_index_to_direction(index) {
-                        // Only process button presses for WaitingForButton state
-                        if let AppState::WaitingForButton { .. } = app_state {
-                            handle_input(direction, &mut app_state);
-                        }
-                    }
-                }
-                EventType::ButtonReleased(_, code) => {
-                    let index = code.into_u32();
-                    button_press_times.remove(&index);
-                    
-                    if let Some(direction) = map_index_to_direction(index) {
-                        // Only handle short press side selection if no long press was detected
-                        if !long_press_detected {
-                            if let AppState::WaitingForSide { .. } = app_state {
-                                handle_input(direction, &mut app_state);
-                            }
-                        }
-                    }
-                    
-                    // Reset long press detection when all buttons are released
-                    if button_press_times.is_empty() {
-                        long_press_detected = false;
-                    }
-                    
-                    // Handle button release state
-                    if let AppState::ButtonPressed { mfd, button_number } = app_state {
-                        println!("Button {} released", button_number);
-                        let key_combo = MFD_KEYS[button_number as usize - 1];
-                        for key in key_combo.iter().rev() {
-                            winky::release(*key);
-                        }
-                        app_state = AppState::WaitingForSide {
-                            mfd,
-                        };
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        match &app_state {
-            AppState::WaitingForButton { last_input_time, mfd, .. } => {
-                if last_input_time.elapsed() > TIMEOUT_DURATION {
-                    println!("Timeout occurred. Resetting to side selection.");
-                    app_state = AppState::WaitingForSide {
-                        mfd: mfd.clone(),
-                    };
-                }
-            }
-            _ => {}
-        }
+fn handle_input_event(
+    event_type: InputEventType,
+    direction: Direction,
+    app_state: &mut AppState,
+) {
+    match event_type {
+        InputEventType::ShortPress => handle_short_press(direction, app_state),
+        InputEventType::LongPress => handle_long_press(direction, app_state),
+        InputEventType::Release => handle_release(app_state),
     }
 }
 
-fn map_index_to_direction(index: u32) -> Option<Direction> {
-    match index {
-        BUTTON_UP => Some(Direction::Up),
-        BUTTON_RIGHT => Some(Direction::Right),
-        BUTTON_DOWN => Some(Direction::Down),
-        BUTTON_LEFT => Some(Direction::Left),
-        _ => None,
+enum InputEventType {
+    ShortPress,
+    LongPress,
+    Release,
+}
+
+fn handle_short_press(direction: Direction, app_state: &mut AppState) {
+    match app_state {
+        AppState::WaitingForSide { mfd } => {
+            println!("Side Selected: {:?}", direction);
+            *app_state = AppState::WaitingForButton {
+                mfd: mfd.clone(),
+                side: direction,
+                inputs: Vec::new(),
+                last_input_time: Instant::now(),
+            };
+        }
+        AppState::WaitingForButton { mfd, side, inputs, last_input_time } => {
+            *last_input_time = Instant::now();
+            inputs.push(direction);
+            
+            if let Some(button_num) = calculate_osb_number(mfd.clone(), *side, inputs.as_slice()) {
+                println!("OSB {} pressed", button_num);
+                press_button(button_num);
+                *app_state = AppState::ButtonPressed {
+                    mfd: mfd.clone(),
+                    button_number: button_num,
+                };
+            } else if !could_lead_to_valid_osb(*side, inputs.as_slice()) {
+                println!("Invalid sequence detected. Resetting to side selection.");
+                *app_state = AppState::InvalidSequence {
+                    mfd: mfd.clone(),
+                };
+            }
+        }
+        AppState::ButtonPressed { .. } => {
+            // Ignore inputs while button is pressed
+        }
+        AppState::InvalidSequence { .. } => {
+            // Ignore inputs while in invalid sequence state
+        }
     }
 }
 
@@ -211,41 +125,107 @@ fn handle_long_press(direction: Direction, app_state: &mut AppState) {
     }
 }
 
-fn handle_input(direction: Direction, app_state: &mut AppState) {
+fn handle_release(app_state: &mut AppState) {
     match app_state {
-        AppState::WaitingForSide { mfd } => {
-            println!("Side Selected: {:?}", direction);
-            *app_state = AppState::WaitingForButton {
+        AppState::ButtonPressed { mfd, button_number } => {
+            println!("OSB {} released", button_number);
+            release_button(*button_number);
+            *app_state = AppState::WaitingForSide {
                 mfd: mfd.clone(),
-                side: direction,
-                inputs: Vec::new(),
-                last_input_time: Instant::now(),
             };
         }
-        AppState::WaitingForButton { mfd, side, inputs, last_input_time } => {
-            *last_input_time = Instant::now();
-            inputs.push(direction);
-            
-            if let Some(button_num) = calculate_osb_number(mfd.clone(), *side, inputs.as_slice()) {
-                println!("OSB {} pressed", button_num);
-                let key_combo = MFD_KEYS[button_num as usize - 1];
-                for key in key_combo.iter() {
-                    winky::press(*key);
+        AppState::InvalidSequence { mfd } => {
+            // Reset to waiting for side after handling release
+            *app_state = AppState::WaitingForSide {
+                mfd: mfd.clone(),
+            };
+        }
+        _ => {}
+    }
+}
+
+fn check_for_timeouts(app_state: &mut AppState) {
+    if let AppState::WaitingForButton { last_input_time, mfd, .. } = app_state {
+        if last_input_time.elapsed() > TIMEOUT_DURATION {
+            println!("Timeout occurred. Resetting to side selection.");
+            *app_state = AppState::WaitingForSide {
+                mfd: mfd.clone(),
+            };
+        }
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let mut gilrs = Gilrs::new().unwrap();
+    let mut app_state = AppState::WaitingForSide {
+        mfd: MfdState::LeftMfd,
+    };
+    let mut button_press_times: HashMap<u32, Instant> = HashMap::new();
+    let mut long_press_detected: bool = false;
+
+    loop {
+        while let Some(Event { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
+            let gamepad_id = u32::try_from(usize::from(id)).unwrap();
+            if gamepad_id != DEVICE_ID {
+                continue;
+            }
+
+            // Check for long press duration on active buttons
+            for (&index, &press_time) in button_press_times.iter() {
+                if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
+                    if let Some(direction) = map_index_to_direction(index) {
+                        handle_input_event(InputEventType::LongPress, direction, &mut app_state);
+                        long_press_detected = true;
+                    }
                 }
-                *app_state = AppState::ButtonPressed {
-                    mfd: mfd.clone(),
-                    button_number: button_num,
-                };
-            } else if !could_lead_to_valid_osb(*side, inputs.as_slice()) {
-                println!("Invalid sequence detected. Resetting to side selection.");
-                *app_state = AppState::WaitingForSide {
-                    mfd: mfd.clone(),
-                };
+            }
+
+            match event {
+                EventType::ButtonPressed(_, code) => {
+                    let index = code.into_u32();
+                    button_press_times.insert(index, Instant::now());
+                    
+                    if let Some(direction) = map_index_to_direction(index) {
+                        if let AppState::WaitingForButton { .. } = app_state {
+                            handle_input_event(InputEventType::ShortPress, direction, &mut app_state);
+                        }
+                    }
+                }
+                EventType::ButtonReleased(_, code) => {
+                    let index = code.into_u32();
+                    button_press_times.remove(&index);
+                    
+                    if let Some(direction) = map_index_to_direction(index) {
+                        if !long_press_detected {
+                            if let AppState::WaitingForSide { .. } = app_state {
+                                handle_input_event(InputEventType::ShortPress, direction, &mut app_state);
+                            }
+                        }
+                    }
+                    
+                    handle_input_event(InputEventType::Release, Direction::Up, &mut app_state);
+                    
+                    // Reset long press detection when all buttons are released
+                    if button_press_times.is_empty() {
+                        long_press_detected = false;
+                    }
+                }
+                _ => {}
             }
         }
-        AppState::ButtonPressed { .. } => {
-            // Ignore inputs while button is pressed
-        }
+
+        check_for_timeouts(&mut app_state);
+    }
+}
+
+fn map_index_to_direction(index: u32) -> Option<Direction> {
+    match index {
+        BUTTON_UP => Some(Direction::Up),
+        BUTTON_RIGHT => Some(Direction::Right),
+        BUTTON_DOWN => Some(Direction::Down),
+        BUTTON_LEFT => Some(Direction::Left),
+        _ => None,
     }
 }
 
