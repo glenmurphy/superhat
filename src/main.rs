@@ -1,10 +1,9 @@
-use gilrs::{Gilrs, Event, EventType};
+use gilrs::{Gilrs, Event, EventType, GamepadId};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 
 #[derive(Debug, PartialEq, Clone)]
 enum MfdState {
-    Inactive,
     LeftMfd,
     RightMfd,
 }
@@ -27,6 +26,15 @@ enum AppState {
     }
 }
 
+const DEVICE_ID: u32 = 1;
+const BUTTON_UP: u32 = 23;
+const BUTTON_RIGHT: u32 = 24;
+const BUTTON_DOWN: u32 = 25;
+const BUTTON_LEFT: u32 = 26;
+
+const TIMEOUT_DURATION: Duration = Duration::from_secs(2);
+const LONGPRESS_DURATION: Duration = Duration::from_millis(500);
+
 fn main() {
     let mut gilrs = Gilrs::new().unwrap();
     let mut app_state = AppState::MfdSelected {
@@ -38,7 +46,11 @@ fn main() {
     let mut button_press_times: HashMap<u32, Instant> = HashMap::new();
 
     loop {
-        while let Some(Event { event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
+        while let Some(Event { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
+            if u32::try_from(usize::from(id)).unwrap() != DEVICE_ID {
+                continue;
+            }
+
             match event {
                 EventType::ButtonPressed(_, code) => {
                     let index = code.into_u32();
@@ -52,7 +64,7 @@ fn main() {
                     if let Some(press_time) = button_press_times.remove(&index) {
                         let duration = press_time.elapsed();
                         if let Some(direction) = map_index_to_direction(index) {
-                            if duration >= Duration::from_millis(500) {
+                            if duration >= LONGPRESS_DURATION {
                                 handle_long_press(direction, &mut app_state);
                             }
                         }
@@ -64,7 +76,7 @@ fn main() {
 
         let AppState::MfdSelected { last_input_time, mfd, side, .. } = &app_state;
         
-        if side.is_some() && last_input_time.elapsed() > Duration::from_secs(2) {
+        if side.is_some() && last_input_time.elapsed() > TIMEOUT_DURATION {
             println!("Timeout occurred. Resetting selection.");
             app_state = AppState::MfdSelected {
                 mfd: mfd.clone(),
@@ -78,10 +90,10 @@ fn main() {
 
 fn map_index_to_direction(index: u32) -> Option<Direction> {
     match index {
-        23 => Some(Direction::Up),
-        24 => Some(Direction::Right),
-        25 => Some(Direction::Down),
-        26 => Some(Direction::Left),
+        BUTTON_UP => Some(Direction::Up),
+        BUTTON_RIGHT => Some(Direction::Right),
+        BUTTON_DOWN => Some(Direction::Down),
+        BUTTON_LEFT => Some(Direction::Left),
         _ => None,
     }
 }
@@ -157,7 +169,6 @@ fn calculate_button_number(
     let mfd_offset = match mfd {
         MfdState::LeftMfd => 0,
         MfdState::RightMfd => 20,
-        MfdState::Inactive => return None,
     };
 
     Some(base_number + button_position + mfd_offset + 1)
