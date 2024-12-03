@@ -1,6 +1,7 @@
-use gilrs::{Gilrs, Event, EventType, GamepadId};
+use gilrs::{Gilrs, Event, EventType};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
+use winky::{self, Event as WinkyEvent, Key};
 
 #[derive(Debug, PartialEq, Clone)]
 enum MfdState {
@@ -18,12 +19,20 @@ enum Direction {
 
 #[derive(Debug)]
 enum AppState {
-    MfdSelected {
+    WaitingForSide {
         mfd: MfdState,
-        side: Option<Direction>,
+        last_input_time: Instant,
+    },
+    WaitingForButton {
+        mfd: MfdState,
+        side: Direction,
         inputs: Vec<Direction>,
         last_input_time: Instant,
-    }
+    },
+    ButtonPressed {
+        mfd: MfdState,
+        button_number: u8,
+    },
 }
 
 const DEVICE_ID: u32 = 1;
@@ -35,19 +44,19 @@ const BUTTON_LEFT: u32 = 26;
 const TIMEOUT_DURATION: Duration = Duration::from_secs(2);
 const LONGPRESS_DURATION: Duration = Duration::from_millis(500);
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let mut gilrs = Gilrs::new().unwrap();
-    let mut app_state = AppState::MfdSelected {
+    let mut app_state = AppState::WaitingForSide {
         mfd: MfdState::LeftMfd,
-        side: None,
-        inputs: Vec::new(),
         last_input_time: Instant::now(),
     };
     let mut button_press_times: HashMap<u32, Instant> = HashMap::new();
 
     loop {
         while let Some(Event { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
-            if u32::try_from(usize::from(id)).unwrap() != DEVICE_ID {
+            let gamepad_id = u32::try_from(usize::from(id)).unwrap();
+            if gamepad_id != DEVICE_ID {
                 continue;
             }
 
@@ -55,35 +64,56 @@ fn main() {
                 EventType::ButtonPressed(_, code) => {
                     let index = code.into_u32();
                     button_press_times.insert(index, Instant::now());
+                    
+                    // Handle immediate button presses
                     if let Some(direction) = map_index_to_direction(index) {
-                        handle_input(direction, &mut app_state);
+                        // Only process button presses for WaitingForButton state
+                        if let AppState::WaitingForButton { .. } = app_state {
+                            handle_input(direction, &mut app_state);
+                        }
                     }
                 }
                 EventType::ButtonReleased(_, code) => {
                     let index = code.into_u32();
                     if let Some(press_time) = button_press_times.remove(&index) {
-                        let duration = press_time.elapsed();
                         if let Some(direction) = map_index_to_direction(index) {
-                            if duration >= LONGPRESS_DURATION {
+                            let press_duration = press_time.elapsed();
+                            
+                            if press_duration >= LONGPRESS_DURATION {
                                 handle_long_press(direction, &mut app_state);
+                            } else {
+                                // Handle side selection on release when in WaitingForSide state
+                                if let AppState::WaitingForSide { .. } = app_state {
+                                    handle_input(direction, &mut app_state);
+                                }
                             }
                         }
+                    }
+                    
+                    // Handle button release state
+                    if let AppState::ButtonPressed { mfd, button_number } = app_state {
+                        println!("Button {} released", button_number);
+                        app_state = AppState::WaitingForSide {
+                            mfd,
+                            last_input_time: Instant::now(),
+                        };
                     }
                 }
                 _ => {}
             }
         }
 
-        let AppState::MfdSelected { last_input_time, mfd, side, .. } = &app_state;
-        
-        if side.is_some() && last_input_time.elapsed() > TIMEOUT_DURATION {
-            println!("Timeout occurred. Resetting selection.");
-            app_state = AppState::MfdSelected {
-                mfd: mfd.clone(),
-                side: None,
-                inputs: Vec::new(),
-                last_input_time: Instant::now(),
-            };
+        match &app_state {
+            AppState::WaitingForButton { last_input_time, mfd, .. } => {
+                if last_input_time.elapsed() > TIMEOUT_DURATION {
+                    println!("Timeout occurred. Resetting to side selection.");
+                    app_state = AppState::WaitingForSide {
+                        mfd: mfd.clone(),
+                        last_input_time: Instant::now(),
+                    };
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -99,50 +129,58 @@ fn map_index_to_direction(index: u32) -> Option<Direction> {
 }
 
 fn handle_long_press(direction: Direction, app_state: &mut AppState) {
-    match direction {
-        Direction::Left | Direction::Right => {
-            let selected_mfd = match direction {
-                Direction::Left => MfdState::LeftMfd,
-                Direction::Right => MfdState::RightMfd,
-                _ => unreachable!(),
-            };
-            println!("MFD Selected: {:?}", selected_mfd);
-            *app_state = AppState::MfdSelected {
-                mfd: selected_mfd,
-                side: None,
-                inputs: Vec::new(),
-                last_input_time: Instant::now(),
-            };
-        }
-        _ => {
-            println!("Long press detected in invalid direction for MFD selection.");
+    if let AppState::WaitingForSide { .. } = app_state {
+        match direction {
+            Direction::Left | Direction::Right => {
+                let selected_mfd = match direction {
+                    Direction::Left => MfdState::LeftMfd,
+                    Direction::Right => MfdState::RightMfd,
+                    _ => unreachable!(),
+                };
+                println!("MFD Selected: {:?}", selected_mfd);
+                *app_state = AppState::WaitingForSide {
+                    mfd: selected_mfd,
+                    last_input_time: Instant::now(),
+                };
+            }
+            _ => {
+                println!("Long press detected in invalid direction for MFD selection.");
+            }
         }
     }
 }
 
 fn handle_input(direction: Direction, app_state: &mut AppState) {
-    let AppState::MfdSelected {
-        ref mfd,
-        ref mut side,
-        ref mut inputs,
-        ref mut last_input_time,
-    } = app_state;
-
-    *last_input_time = Instant::now();
-    
-    if side.is_none() {
-        *side = Some(direction);
-        println!("Side Selected: {:?}", direction);
-    } else {
-        inputs.push(direction);
-        if let Some(button_num) = calculate_button_number(mfd.clone(), side.unwrap(), inputs.as_slice()) {
-            println!("Pressed button {}", button_num);
-            *side = None;
-            inputs.clear();
-        } else if !could_lead_to_valid_button(side.unwrap(), inputs.as_slice()) {
-            println!("Invalid sequence detected. Resetting selection.");
-            *side = None;
-            inputs.clear();
+    match app_state {
+        AppState::WaitingForSide { mfd, .. } => {
+            println!("Side Selected: {:?}", direction);
+            *app_state = AppState::WaitingForButton {
+                mfd: mfd.clone(),
+                side: direction,
+                inputs: Vec::new(),
+                last_input_time: Instant::now(),
+            };
+        }
+        AppState::WaitingForButton { mfd, side, inputs, last_input_time } => {
+            *last_input_time = Instant::now();
+            inputs.push(direction);
+            
+            if let Some(button_num) = calculate_button_number(mfd.clone(), *side, inputs.as_slice()) {
+                println!("Button {} pressed", button_num);
+                *app_state = AppState::ButtonPressed {
+                    mfd: mfd.clone(),
+                    button_number: button_num,
+                };
+            } else if !could_lead_to_valid_button(*side, inputs.as_slice()) {
+                println!("Invalid sequence detected. Resetting to side selection.");
+                *app_state = AppState::WaitingForSide {
+                    mfd: mfd.clone(),
+                    last_input_time: Instant::now(),
+                };
+            }
+        }
+        AppState::ButtonPressed { .. } => {
+            // Ignore inputs while button is pressed
         }
     }
 }
