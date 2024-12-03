@@ -58,6 +58,7 @@ fn handle_input_event(
     event_type: InputEventType,
     button_index: u32,
     app_state: &mut AppState,
+    long_press_for_mfd: &mut bool,
 ) {
     let direction = match map_index_to_direction(button_index) {
         Some(dir) => dir,
@@ -67,7 +68,9 @@ fn handle_input_event(
     match (event_type, &*app_state) {
         // Handle initial side selection on button release
         (InputEventType::ButtonUp, AppState::WaitingForSide { .. }) => {
-            handle_short_press(direction, app_state)
+            if !*long_press_for_mfd {
+                handle_short_press(direction, app_state)
+            }
         },
         // Handle subsequent button presses immediately
         (InputEventType::ButtonDown, AppState::WaitingForButton { .. }) => {
@@ -75,7 +78,7 @@ fn handle_input_event(
         },
         // Handle long press for MFD selection
         (InputEventType::LongPress, _) => {
-            handle_long_press(direction, app_state)
+            *long_press_for_mfd = handle_long_press(direction, app_state)
         },
         // Handle button release cleanup
         (InputEventType::ButtonUp, _) => {
@@ -120,7 +123,7 @@ fn handle_short_press(direction: Direction, app_state: &mut AppState) {
     }
 }
 
-fn handle_long_press(direction: Direction, app_state: &mut AppState) {
+fn handle_long_press(direction: Direction, app_state: &mut AppState) -> bool {
     if let AppState::WaitingForSide { .. } = app_state {
         match direction {
             Direction::Left | Direction::Right => {
@@ -133,12 +136,14 @@ fn handle_long_press(direction: Direction, app_state: &mut AppState) {
                 *app_state = AppState::WaitingForSide {
                     mfd: selected_mfd,
                 };
+                return true; // Long press was for MFD selection
             }
             _ => {
                 println!("Long press detected in invalid direction for MFD selection.");
             }
         }
     }
+    false // Long press was not for MFD selection
 }
 
 fn handle_release(app_state: &mut AppState) {
@@ -179,6 +184,7 @@ async fn main() {
     };
     let mut button_press_times: HashMap<u32, Instant> = HashMap::new();
     let mut long_press_detected: bool = false;
+    let mut long_press_for_mfd: bool = false;
 
     loop {
         while let Some(Event { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
@@ -190,7 +196,7 @@ async fn main() {
             // Check for long press duration on active buttons
             for (&index, &press_time) in button_press_times.iter() {
                 if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
-                    handle_input_event(InputEventType::LongPress, index, &mut app_state);
+                    handle_input_event(InputEventType::LongPress, index, &mut app_state, &mut long_press_for_mfd);
                     long_press_detected = true;
                 }
             }
@@ -199,19 +205,20 @@ async fn main() {
                 EventType::ButtonPressed(_, code) => {
                     let index = code.into_u32();
                     button_press_times.insert(index, Instant::now());
-                    handle_input_event(InputEventType::ButtonDown, index, &mut app_state);
+                    handle_input_event(InputEventType::ButtonDown, index, &mut app_state, &mut long_press_for_mfd);
                 }
                 EventType::ButtonReleased(_, code) => {
                     let index = code.into_u32();
                     button_press_times.remove(&index);
                     
-                    if !long_press_detected {
-                        handle_input_event(InputEventType::ButtonUp, index, &mut app_state);
+                    if !long_press_detected || !long_press_for_mfd {
+                        handle_input_event(InputEventType::ButtonUp, index, &mut app_state, &mut long_press_for_mfd);
                     }
                     
                     // Reset long press detection when all buttons are released
                     if button_press_times.is_empty() {
                         long_press_detected = false;
+                        long_press_for_mfd = false; // Reset long press type
                     }
                 }
                 _ => {}
