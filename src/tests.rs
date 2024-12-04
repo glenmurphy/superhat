@@ -1,5 +1,4 @@
 use super::*;
-use std::thread;
 
 fn setup_test_config() {
     let config = Config::default();
