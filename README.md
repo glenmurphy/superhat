@@ -5,7 +5,7 @@ Planes in modern combat flight simulators have two or three MFDs - square displa
 
 Superhat allows a single joystick 'hat' (a four-way button) to navigate the MFDs and press their buttons - a long press to the left or right 'selects' which MFD is active. Any further short press selects which edge of the MFD is selected, then you can select which of the five buttons using further inputs - you can imagine the first press selects the middle button, then you can move the selection to adjacent buttons by pushing in that direction. You confirm selection of the middle buttons by pushing in the direction you started - this way all MFD buttons can be accessed with 3 hat presses.
 
-To use the right row as an example:
+To use the right side as an example:
 - to press OSB 8 (the middle one), press right>right
 - to press OSB 7, press right>up>right
 - to press OSB 6, press right>up>up (the final 'right' is not necessary as there are no other choices you can make)
