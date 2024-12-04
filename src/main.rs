@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 use std::fs;
 use std::path::Path;
 use serde::{Serialize, Deserialize};
-use gilrs::{Button, GamepadId};
+use std::sync::Mutex;
 
 mod mfd_keys;
 use mfd_keys::{press_osb, release_osb};
@@ -48,33 +48,31 @@ enum AppState {
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Config {
-    device_id: u32,
     button_bindings: ButtonBindings,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 struct ButtonBindings {
-    up: u32,
-    right: u32,
-    down: u32,
-    left: u32,
+    up: (u32, u32),    // (device_id, button_code)
+    right: (u32, u32),
+    down: (u32, u32),
+    left: (u32, u32),
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
-            device_id: 1,
             button_bindings: ButtonBindings {
-                up: 23,
-                right: 24,
-                down: 25,
-                left: 26,
+                up: (1, 23),
+                right: (1, 24),
+                down: (1, 25),
+                left: (1, 26),
             }
         }
     }
 }
 
-static mut CONFIG: Option<Config> = None;
+static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 
 const TIMEOUT_DURATION: Duration = Duration::from_millis(1500);
 const LONGPRESS_DURATION: Duration = Duration::from_millis(500);
@@ -87,40 +85,53 @@ enum InputEventType {
 
 fn handle_input_event(
     event_type: InputEventType,
-    button_index: u32,
+    button_id: u32,
+    device_id: u32,
     app_state: &mut AppState,
-    long_press_for_mfd: &mut bool,
+    long_press_detected: bool,
 ) {
-    let direction = match map_index_to_direction(button_index) {
+    let direction = match map_button_to_direction(device_id, button_id) {
         Some(dir) => dir,
         None => return, // Invalid button index
     };
 
     match (event_type, &*app_state) {
-        // Handle initial side selection on button release (because we need to distinguish between
-        // a long press for MFD selection and a short press for side selection)
-        (InputEventType::ButtonUp, AppState::WaitingForSide { .. }) => {
-            if !*long_press_for_mfd {
-                handle_short_press(direction, app_state)
+        // Handle long press for MFD selection - only in WaitingForSide state
+        (InputEventType::LongPress, AppState::WaitingForSide { .. }) => {
+            if let Direction::Left | Direction::Right = direction {
+                let selected_mfd = match direction {
+                    Direction::Left => MfdState::LeftMfd,
+                    Direction::Right => MfdState::RightMfd,
+                    _ => unreachable!(),
+                };
+                println!("MFD Selected: {:?}", selected_mfd);
+                *app_state = AppState::WaitingForSide {
+                    mfd: selected_mfd,
+                };
             }
         },
-        // Handle subsequent button presses immediately
+        // Handle button releases in WaitingForSide state
+        (InputEventType::ButtonUp, AppState::WaitingForSide { .. }) => {
+            // Only process as a short press if no long press was detected
+            if !long_press_detected {
+                handle_short_press(direction, app_state);
+            }
+        },
+        // Handle subsequent button presses
         (InputEventType::ButtonDown, AppState::SelectingOSB { .. }) => {
-            handle_short_press(direction, app_state)
+            handle_short_press(direction, app_state);
         },
-        // Handle button presses in other states
-        (InputEventType::ButtonDown, _) => {
-            handle_short_press(direction, app_state)
-        },
-        // Handle long press for MFD selection
-        (InputEventType::LongPress, _) => {
-            *long_press_for_mfd = handle_long_press(direction, app_state)
-        },
-        // Handle button release cleanup
+        // Handle button releases
         (InputEventType::ButtonUp, _) => {
-            handle_release(app_state)
+            handle_release(app_state);
         },
-        _ => {} // Ignore other state combinations
+        // Ignore initial button presses in WaitingForSide state
+        (InputEventType::ButtonDown, AppState::WaitingForSide { .. }) => {},
+        // Handle other button presses
+        (InputEventType::ButtonDown, _) => {
+            handle_short_press(direction, app_state);
+        },
+        _ => {},
     }
 }
 
@@ -162,29 +173,6 @@ fn handle_short_press(direction: Direction, app_state: &mut AppState) {
     }
 }
 
-fn handle_long_press(direction: Direction, app_state: &mut AppState) -> bool {
-    if let AppState::WaitingForSide { .. } = app_state {
-        match direction {
-            Direction::Left | Direction::Right => {
-                let selected_mfd = match direction {
-                    Direction::Left => MfdState::LeftMfd,
-                    Direction::Right => MfdState::RightMfd,
-                    _ => unreachable!(),
-                };
-                println!("MFD Selected: {:?}", selected_mfd);
-                *app_state = AppState::WaitingForSide {
-                    mfd: selected_mfd,
-                };
-                return true; // Long press was for MFD selection
-            }
-            _ => {
-                println!("Long press detected in invalid direction for MFD selection.");
-            }
-        }
-    }
-    false // Long press was not for MFD selection
-}
-
 fn handle_release(app_state: &mut AppState) {
     match app_state {
         AppState::OSBPressed { mfd, osb_number: button_number } => {
@@ -222,32 +210,29 @@ fn enter_binding_mode(app_state: &mut AppState) {
     };
 }
 
-fn handle_binding(button_code: u32, gamepad_id: GamepadId, app_state: &mut AppState) {
+fn handle_binding(button_id: u32, device_id: u32, app_state: &mut AppState) {
     if let AppState::BindingMode { waiting_for } = app_state {
-        unsafe {
-            if let Some(config) = &mut CONFIG {
-                // Store the device ID of the gamepad being bound
-                config.device_id = u32::try_from(usize::from(gamepad_id)).unwrap();
-                
+        if let Ok(mut config) = CONFIG.lock() {
+            if let Some(config) = config.as_mut() {
                 match waiting_for {
                     Direction::Up => {
-                        config.button_bindings.up = button_code;
-                        println!("UP bound. Press button for RIGHT");
+                        config.button_bindings.up = (device_id, button_id);
+                        println!("UP bound to device {} button {}. Press button for RIGHT", device_id, button_id);
                         *app_state = AppState::BindingMode { waiting_for: Direction::Right };
                     },
                     Direction::Right => {
-                        config.button_bindings.right = button_code;
-                        println!("RIGHT bound. Press button for DOWN");
+                        config.button_bindings.right = (device_id, button_id);
+                        println!("RIGHT bound to device {} button {}. Press button for DOWN", device_id, button_id);
                         *app_state = AppState::BindingMode { waiting_for: Direction::Down };
                     },
                     Direction::Down => {
-                        config.button_bindings.down = button_code;
-                        println!("DOWN bound. Press button for LEFT");
+                        config.button_bindings.down = (device_id, button_id);
+                        println!("DOWN bound to device {} button {}. Press button for LEFT", device_id, button_id);
                         *app_state = AppState::BindingMode { waiting_for: Direction::Left };
                     },
                     Direction::Left => {
-                        config.button_bindings.left = button_code;
-                        println!("Configuration complete! Using device {}", config.device_id);
+                        config.button_bindings.left = (device_id, button_id);
+                        println!("LEFT bound to device {} button {}. Configuration complete!", device_id, button_id);
                         save_config(&config);
                         *app_state = AppState::WaitingForSide { mfd: MfdState::LeftMfd };
                     },
@@ -273,94 +258,111 @@ fn load_config() -> Config {
 
 #[tokio::main]
 async fn main() {
-    // Load config at startup
-    unsafe {
-        CONFIG = Some(load_config());
-    }
+    // Initialize CONFIG at startup
+    *CONFIG.lock().unwrap() = Some(load_config());
 
     let mut gilrs = Gilrs::new().unwrap();
     let mut app_state = AppState::WaitingForSide {
         mfd: MfdState::LeftMfd,
     };
-    let mut button_press_times: HashMap<u32, Instant> = HashMap::new();
+    let mut button_press_times: HashMap<(u32, u32), Instant> = HashMap::new();  // (device_id, button_code) -> press_time
     let mut long_press_detected: bool = false;
-    let mut long_press_for_mfd: bool = false;
+
+    // Clear out any events that occurred before we started
+    while let Some(Event { .. }) = gilrs.next_event() {}
 
     loop {
-        while let Some(Event { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
-            let gamepad_id = u32::try_from(usize::from(id)).unwrap();
-            
+        // Non-blocking event check
+        while let Some(Event { id, event, .. }) = gilrs.next_event() {
             match event {
-                EventType::ButtonPressed(button, code) => {
-                    let index = code.into_u32();
-                    println!("Button pressed: {:?} (code: {})", button, index);
+                EventType::ButtonPressed(_, code) => {
+                    let button_id = code.into_u32();
+                    let device_id = u32::try_from(usize::from(id)).unwrap();
 
                     if let AppState::BindingMode { .. } = app_state {
-                        handle_binding(index, id, &mut app_state);
+                        handle_binding(button_id, device_id, &mut app_state);
                         continue;
                     }
 
-                    unsafe {
-                        if let Some(config) = &CONFIG {
-                            if gamepad_id != config.device_id {
-                                continue;
-                            }
-                        }
+                    if let Some(_) = map_button_to_direction(device_id, button_id) {
+                        button_press_times.insert((device_id, button_id), Instant::now());
+                        long_press_detected = false; // Reset long press flag on new press
+                        handle_input_event(InputEventType::ButtonDown, button_id, device_id, &mut app_state, long_press_detected);
                     }
-                    
-                    button_press_times.insert(index, Instant::now());
-                    handle_input_event(InputEventType::ButtonDown, index, &mut app_state, &mut long_press_for_mfd);
                 }
                 EventType::ButtonReleased(_, code) => {
+                    let button_id = code.into_u32();
+                    let device_id = u32::try_from(usize::from(id)).unwrap();
+
                     if let AppState::BindingMode { .. } = app_state {
                         continue;
                     }
-                    let index = code.into_u32();
-                    button_press_times.remove(&index);
-                    
-                    if !long_press_detected || !long_press_for_mfd {
-                        handle_input_event(InputEventType::ButtonUp, index, &mut app_state, &mut long_press_for_mfd);
+
+                    if let Some(_) = map_button_to_direction(device_id, button_id) {
+                        // Store the current long_press_detected state before removing from press_times
+                        let was_long_press = long_press_detected;
+                        button_press_times.remove(&(device_id, button_id));
+                        
+                        // Only process button release if it wasn't a long press or if we're in OSBPressed state
+                        if !was_long_press || matches!(app_state, AppState::OSBPressed { .. }) {
+                            handle_input_event(InputEventType::ButtonUp, button_id, device_id, &mut app_state, was_long_press);
+                        }
+                        
+                        if button_press_times.is_empty() {
+                            long_press_detected = false;
+                        }
                     }
-                    
-                    // Reset long press detection when all buttons are released
-                    if button_press_times.is_empty() {
-                        long_press_detected = false;
-                        long_press_for_mfd = false;
-                    }
-                }
-                EventType::Connected => {
-                    println!("Gamepad {} connected", gamepad_id);
-                }
-                EventType::Disconnected => {
-                    println!("Gamepad {} disconnected", gamepad_id);
                 }
                 _ => {}
             }
         }
 
-        // Check for 'b' key press to enter binding mode
-        if let Ok(true) = crossterm::event::poll(std::time::Duration::from_millis(0)) {
+        // Check for long presses on every iteration
+        for (&(device_id, button_id), &press_time) in button_press_times.iter() {
+            if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
+                if let Some(_) = map_button_to_direction(device_id, button_id) {
+                    handle_input_event(
+                        InputEventType::LongPress,
+                        button_id,
+                        device_id,
+                        &mut app_state,
+                        true
+                    );
+                    long_press_detected = true;
+                }
+            }
+        }
+
+        // Process keyboard events
+        while crossterm::event::poll(Duration::ZERO).unwrap() {
             if let Ok(crossterm::event::Event::Key(key_event)) = crossterm::event::read() {
-                if key_event.code == crossterm::event::KeyCode::Char('b') {
+                if key_event.code == crossterm::event::KeyCode::Char('b') 
+                    && key_event.kind == crossterm::event::KeyEventKind::Press {
                     enter_binding_mode(&mut app_state);
+                    break;
                 }
             }
         }
 
         check_for_timeouts(&mut app_state);
+
+        // Small sleep to prevent CPU spinning
+        std::thread::sleep(Duration::from_millis(100));
     }
 }
 
-fn map_index_to_direction(index: u32) -> Option<Direction> {
-    unsafe {
-        if let Some(config) = &CONFIG {
-            return match index {
-                i if i == config.button_bindings.up => Some(Direction::Up),
-                i if i == config.button_bindings.right => Some(Direction::Right),
-                i if i == config.button_bindings.down => Some(Direction::Down),
-                i if i == config.button_bindings.left => Some(Direction::Left),
+fn map_button_to_direction(device_id: u32, button_id: u32) -> Option<Direction> {
+    if let Ok(config) = CONFIG.lock() {
+        if let Some(config) = config.as_ref() {
+            let direction = match (device_id, button_id) {
+                (dev, code) if (dev, code) == config.button_bindings.up => Some(Direction::Up),
+                (dev, code) if (dev, code) == config.button_bindings.right => Some(Direction::Right),
+                (dev, code) if (dev, code) == config.button_bindings.down => Some(Direction::Down),
+                (dev, code) if (dev, code) == config.button_bindings.left => Some(Direction::Left),
                 _ => None,
             };
+
+            return direction;
         }
     }
     None
