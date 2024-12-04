@@ -87,14 +87,20 @@ impl Ui {
             AppState::BindingMode { .. } => (false, false),
         };
 
-        let (left_active_side, right_active_side) = match app_state {
+        let (left_active_side, right_active_side, left_pressed_osb, right_pressed_osb) = match app_state {
             AppState::SelectingOSB { mfd, side, .. } => {
                 match mfd {
-                    MfdState::LeftMfd => (Some(side), None),
-                    MfdState::RightMfd => (None, Some(side)),
+                    MfdState::LeftMfd => (Some(side), None, None, None),
+                    MfdState::RightMfd => (None, Some(side), None, None),
                 }
             }
-            _ => (None, None),
+            AppState::OSBPressed { mfd, osb_number } => {
+                match mfd {
+                    MfdState::LeftMfd => (None, None, Some(*osb_number), None),
+                    MfdState::RightMfd => (None, None, None, Some(*osb_number)),
+                }
+            }
+            _ => (None, None, None, None),
         };
 
         self.render_mfds(
@@ -102,6 +108,8 @@ impl Ui {
             right_highlight,
             left_active_side,
             right_active_side,
+            left_pressed_osb,
+            right_pressed_osb,
         )?;
 
         // Replace the status line rendering with the new method
@@ -111,7 +119,7 @@ impl Ui {
         Ok(())
     }
 
-    fn draw_button(&mut self, number: u8, pos: ButtonPosition, highlighted: bool, active: bool) -> io::Result<()> {
+    fn draw_button(&mut self, number: u8, pos: ButtonPosition, highlighted: bool, active: bool, pressed: bool) -> io::Result<()> {
         // Draw the 3x6 button box
         for dy in 0..3 {
             self.stdout.queue(cursor::MoveTo(pos.x, pos.y + dy))?;
@@ -129,7 +137,13 @@ impl Ui {
                     _ => " "
                 };
 
-                if active {
+                if pressed {
+                    write!(
+                        self.stdout,
+                        "{}",
+                        style::style(char).with(Color::Red).on(Color::White)
+                    )?;
+                } else if active {
                     write!(
                         self.stdout,
                         "{}",
@@ -155,6 +169,7 @@ impl Ui {
         start_y: u16,
         highlighted: bool,
         active_side: Option<&Direction>,
+        pressed_osb: Option<u8>,
         is_right_mfd: bool,
     ) -> io::Result<()> {
         let base_number = if is_right_mfd { 20 } else { 0 };
@@ -187,11 +202,14 @@ impl Ui {
                 }
             });
 
+            let is_pressed = pressed_osb.map_or(false, |osb| osb == button_num + base_number);
+
             self.draw_button(
                 button_num + base_number,
                 pos,
                 highlighted,
                 is_active,
+                is_pressed,
             )?;
         }
         Ok(())
@@ -203,12 +221,14 @@ impl Ui {
         right_highlight: bool,
         left_active_side: Option<&Direction>,
         right_active_side: Option<&Direction>,
+        left_pressed_osb: Option<u8>,
+        right_pressed_osb: Option<u8>,
     ) -> io::Result<()> {
         // Render left MFD
-        self.render_mfd(3, 1, left_highlight, left_active_side, false)?;
+        self.render_mfd(3, 1, left_highlight, left_active_side, left_pressed_osb, false)?;
         
         // Render right MFD
-        self.render_mfd(51, 1, right_highlight, right_active_side, true)?;
+        self.render_mfd(51, 1, right_highlight, right_active_side, right_pressed_osb, true)?;
         
         Ok(())
     }

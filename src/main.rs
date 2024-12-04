@@ -366,7 +366,7 @@ async fn main() -> io::Result<()> {
                 Event::Resize(width, height) => {
                     ui.handle_resize(width, height, &app_state)?;
                 }
-                Event::Mouse(MouseEvent { kind, column, row, .. }) => {
+                Event::Mouse(MouseEvent { kind, .. }) => { // column, row, 
                     match kind {
                         MouseEventKind::Down(_) => {
                             //println!("Mouse clicked at: ({}, {})", column, row);
