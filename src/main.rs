@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 use serde::{Serialize, Deserialize};
 use std::sync::Mutex;
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
 use std::io;
 
 mod mfd_keys;
@@ -354,8 +354,8 @@ async fn main() -> io::Result<()> {
             }
         }
 
-        // Process keyboard events
-        if crossterm::event::poll(Duration::ZERO)? {
+        // Process other events
+        while crossterm::event::poll(Duration::ZERO)? {
             match crossterm::event::read()? {
                 Event::Key(KeyEvent { code: KeyCode::Char('b'), kind: KeyEventKind::Press, .. }) => {
                     enter_binding_mode(&mut app_state, &mut ui)?;
@@ -365,6 +365,14 @@ async fn main() -> io::Result<()> {
                 }
                 Event::Resize(width, height) => {
                     ui.handle_resize(width, height, &app_state)?;
+                }
+                Event::Mouse(MouseEvent { kind, column, row, .. }) => {
+                    match kind {
+                        MouseEventKind::Down(_) => {
+                            //println!("Mouse clicked at: ({}, {})", column, row);
+                        }
+                        _ => {}
+                    }
                 }
                 _ => {}
             }

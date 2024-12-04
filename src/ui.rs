@@ -2,6 +2,7 @@ use crossterm::{
     cursor,
     style::{self, Color, Stylize},
     terminal, QueueableCommand,
+    event,
 };
 use std::io::{self, Write};
 use winapi::um::wincon::{
@@ -10,6 +11,8 @@ use winapi::um::wincon::{
 use winapi::um::processenv::GetStdHandle;
 use winapi::um::winbase::STD_OUTPUT_HANDLE;
 use winapi::um::handleapi::INVALID_HANDLE_VALUE;
+use winapi::um::winuser::{SetWindowLongA, GetWindowLongA, GWL_STYLE, WS_SIZEBOX, WS_MAXIMIZEBOX};
+use winapi::um::wincon::GetConsoleWindow;
 
 use crate::{AppState, Direction, MfdState};
 
@@ -36,16 +39,27 @@ const CONSOLE_HEIGHT: u16 = 26;
 impl Ui {
     pub fn new() -> io::Result<Self> {
         // Set console size before initializing
-        set_console_size(CONSOLE_WIDTH as i16, CONSOLE_HEIGHT as i16);  // Adjust size as needed
+        set_console_size(CONSOLE_WIDTH as i16, CONSOLE_HEIGHT as i16);
 
-        let stdout = io::stdout();
+        // Disable window resizing
+        unsafe {
+            let hwnd = GetConsoleWindow();
+            SetWindowLongA(hwnd, GWL_STYLE, GetWindowLongA(hwnd, GWL_STYLE) & !(WS_MAXIMIZEBOX | WS_SIZEBOX) as i32);
+        }
+
+        let mut stdout = io::stdout();
         terminal::enable_raw_mode()?;
+        
+        crossterm::execute!(
+            stdout,
+            terminal::EnterAlternateScreen,
+            event::EnableMouseCapture
+        )?;
         
         let mut ui = Ui { stdout };
         ui.stdout.queue(cursor::Hide)?;
         ui.stdout.flush()?;
 
-        ui.clear()?;
         Ok(ui)
     }
 
@@ -236,8 +250,15 @@ impl Ui {
         Ok(())
     }
 
-    pub fn handle_resize(&mut self, _width: u16, _height: u16, app_state: &AppState) -> io::Result<()> {
+    pub fn handle_resize(&mut self, width: u16, height: u16, app_state: &AppState) -> io::Result<()> {
         // Force it back
+        if width == CONSOLE_WIDTH && height == CONSOLE_HEIGHT { 
+            // Re-render the entire UI
+            self.clear()?;
+            self.update(app_state)?;
+            return Ok(())
+         }
+
         set_console_size(CONSOLE_WIDTH as i16, CONSOLE_HEIGHT as i16);
         
         // Re-render the entire UI
@@ -250,8 +271,11 @@ impl Ui {
 impl Drop for Ui {
     fn drop(&mut self) {
         let _ = terminal::disable_raw_mode();
-        let _ = self.stdout.queue(cursor::Show);
-        let _ = self.stdout.flush();
+        let _ = crossterm::execute!(
+            self.stdout,
+            event::DisableMouseCapture,
+            cursor::Show
+        );
     }
 }
 
