@@ -1,10 +1,12 @@
-use gilrs::{Gilrs, Event, EventType};
+use gilrs::{Gilrs, Event as GilrsEvent, EventType};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
 use std::fs;
 use std::path::Path;
 use serde::{Serialize, Deserialize};
 use std::sync::Mutex;
+use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind};
+use std::io;
 
 mod mfd_keys;
 use mfd_keys::{press_osb, release_osb};
@@ -195,23 +197,26 @@ fn handle_release(app_state: &mut AppState) {
     }
 }
 
-fn check_for_timeouts(app_state: &mut AppState, ui: &mut Ui) {
+fn check_for_timeouts(app_state: &mut AppState, ui: &mut Ui) -> io::Result<()> {
     if let AppState::SelectingOSB { last_input_time, mfd, .. } = app_state {
         if last_input_time.elapsed() > TIMEOUT_DURATION {
             //  println!("Timeout occurred. Resetting to side selection.");
             *app_state = AppState::WaitingForSide {
                 mfd: mfd.clone(),
             };
-            ui.update(&app_state).unwrap();
+            ui.update(&app_state)?;
         }
     }
+    Ok(())
 }
 
-fn enter_binding_mode(app_state: &mut AppState) {
+fn enter_binding_mode(app_state: &mut AppState, ui: &mut Ui) -> io::Result<()> {
     // println!("Entering binding mode. Press the button you want to use for UP");
     *app_state = AppState::BindingMode {
         waiting_for: Direction::Up,
     };
+    ui.update(app_state)?;
+    Ok(())
 }
 
 fn handle_binding(button_id: u32, device_id: u32, app_state: &mut AppState, ui: &mut Ui) {
@@ -268,27 +273,24 @@ fn load_config() -> Config {
 }
 
 #[tokio::main]
-async fn main() {
-    // Initialize CONFIG at startup
+async fn main() -> io::Result<()> {
     *CONFIG.lock().unwrap() = Some(load_config());
 
     let mut gilrs = Gilrs::new().unwrap();
     let mut app_state = AppState::WaitingForSide {
         mfd: MfdState::LeftMfd,
     };
-    let mut button_press_times: HashMap<(u32, u32), Instant> = HashMap::new();  // (device_id, button_code) -> press_time
+    let mut button_press_times: HashMap<(u32, u32), Instant> = HashMap::new();
     let mut long_press_detected: bool = false;
 
-    // Clear out any events that occurred before we started
-    while let Some(Event { .. }) = gilrs.next_event() {}
+    while let Some(GilrsEvent { .. }) = gilrs.next_event() {}
 
-    let mut ui = Ui::new().unwrap();
-    ui.update(&app_state).unwrap();
+    let mut ui = Ui::new()?;
+    ui.update(&app_state)?;  // Initial render
 
     let mut running = true;
-    while (running) {
-        // Non-blocking event check
-        while let Some(Event { id, event, .. }) = gilrs.next_event() {
+    while running {
+        while let Some(GilrsEvent { id, event, .. }) = gilrs.next_event() {
             match event {
                 EventType::ButtonPressed(_, code) => {
                     let button_id = code.into_u32();
@@ -353,28 +355,25 @@ async fn main() {
         }
 
         // Process keyboard events
-        while crossterm::event::poll(Duration::ZERO).unwrap() {
-            if let Ok(crossterm::event::Event::Key(key_event)) = crossterm::event::read() {
-                if key_event.code == crossterm::event::KeyCode::Char('b') 
-                    && key_event.kind == crossterm::event::KeyEventKind::Press {
-                    enter_binding_mode(&mut app_state);
-                    
-                    ui.update(&app_state).unwrap();
-                    break;
+        if crossterm::event::poll(Duration::ZERO)? {
+            match crossterm::event::read()? {
+                Event::Key(KeyEvent { code: KeyCode::Char('b'), kind: KeyEventKind::Press, .. }) => {
+                    enter_binding_mode(&mut app_state, &mut ui)?;
                 }
-                if key_event.code == crossterm::event::KeyCode::Char('q') 
-                    && key_event.kind == crossterm::event::KeyEventKind::Press {
+                Event::Key(KeyEvent { code: KeyCode::Char('q'), kind: KeyEventKind::Press, .. }) => {
                     running = false;
-                    break;
                 }
+                Event::Resize(width, height) => {
+                    ui.handle_resize(width, height, &app_state)?;
+                }
+                _ => {}
             }
         }
 
-        check_for_timeouts(&mut app_state, &mut ui);
-
-        // Small sleep to prevent CPU spinning
+        check_for_timeouts(&mut app_state, &mut ui)?;
         std::thread::sleep(Duration::from_millis(100));
     }
+    Ok(())
 }
 
 fn map_button_to_direction(device_id: u32, button_id: u32) -> Option<Direction> {

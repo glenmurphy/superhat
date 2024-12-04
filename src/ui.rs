@@ -4,12 +4,14 @@ use crossterm::{
     terminal, QueueableCommand,
 };
 use std::io::{self, Write};
+use winapi::um::wincon::{
+    COORD, SMALL_RECT, SetConsoleWindowInfo, SetConsoleScreenBufferSize,
+};
+use winapi::um::processenv::GetStdHandle;
+use winapi::um::winbase::STD_OUTPUT_HANDLE;
+use winapi::um::handleapi::INVALID_HANDLE_VALUE;
 
 use crate::{AppState, Direction, MfdState};
-
-const MFD_WIDTH: usize = 33;
-const MFD_HEIGHT: usize = 21;
-const MFD_SPACING: usize = 3;
 
 const TOP_LEFT: &str = "┌";
 const TOP_RIGHT: &str = "┐";
@@ -17,11 +19,6 @@ const BOTTOM_LEFT: &str = "└";
 const BOTTOM_RIGHT: &str = "┘";
 const HORIZONTAL: &str = "─";
 const VERTICAL: &str = "│";
-const T_DOWN: &str = "┬";
-const T_UP: &str = "┴";
-const T_RIGHT: &str = "├";
-const T_LEFT: &str = "┤";
-const CROSS: &str = "┼";
 
 // Add this before the Ui implementation
 struct ButtonPosition {
@@ -33,13 +30,29 @@ pub struct Ui {
     stdout: io::Stdout,
 }
 
+const CONSOLE_WIDTH: u16 = 96;
+const CONSOLE_HEIGHT: u16 = 26;
+
 impl Ui {
     pub fn new() -> io::Result<Self> {
-        let mut stdout = io::stdout();
+        // Set console size before initializing
+        set_console_size(CONSOLE_WIDTH as i16, CONSOLE_HEIGHT as i16);  // Adjust size as needed
+
+        let stdout = io::stdout();
         terminal::enable_raw_mode()?;
-        stdout.queue(terminal::Clear(terminal::ClearType::All))?;
-        stdout.queue(cursor::Hide)?;
-        Ok(Self { stdout })
+        
+        let mut ui = Ui { stdout };
+        ui.stdout.queue(cursor::Hide)?;
+        ui.stdout.flush()?;
+
+        ui.clear()?;
+        Ok(ui)
+    }
+
+    pub fn clear(&mut self) -> io::Result<()> {
+        self.stdout.queue(terminal::Clear(terminal::ClearType::All))?;
+        self.stdout.flush()?;
+        Ok(())
     }
 
     pub fn update(&mut self, app_state: &AppState) -> io::Result<()> {
@@ -77,31 +90,8 @@ impl Ui {
             right_active_side,
         )?;
 
-        // Render status line
-        self.stdout.queue(cursor::MoveTo(0, MFD_HEIGHT as u16 + 2))?;
-        self.stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
-        match app_state {
-            AppState::WaitingForSide { mfd } => {
-                write!(self.stdout, "Waiting for side selection ({})", 
-                    if matches!(mfd, MfdState::LeftMfd) { "LEFT" } else { "RIGHT" })?;
-            }
-            AppState::SelectingOSB { mfd, side, .. } => {
-                write!(self.stdout, "Selecting OSB on {} MFD, {} side", 
-                    if matches!(mfd, MfdState::LeftMfd) { "LEFT" } else { "RIGHT" },
-                    format!("{:?}", side).to_uppercase())?;
-            }
-            AppState::OSBPressed { mfd, osb_number } => {
-                write!(self.stdout, "OSB {} pressed on {} MFD", 
-                    osb_number,
-                    if matches!(mfd, MfdState::LeftMfd) { "LEFT" } else { "RIGHT" })?;
-            }
-            AppState::InvalidSequence { .. } => {
-                write!(self.stdout, "Invalid sequence")?;
-            }
-            AppState::BindingMode { waiting_for } => {
-                write!(self.stdout, "Binding mode: Press button for {:?}", waiting_for)?;
-            }
-        }
+        // Replace the status line rendering with the new method
+        self.render_status_line(app_state)?;
 
         self.stdout.flush()?;
         Ok(())
@@ -148,6 +138,7 @@ impl Ui {
     fn render_mfd(
         &mut self,
         start_x: u16,
+        start_y: u16,
         highlighted: bool,
         active_side: Option<&Direction>,
         is_right_mfd: bool,
@@ -170,7 +161,7 @@ impl Ui {
             let button_num = (i as u8) + 1;
             let pos = ButtonPosition {
                 x: start_x + *rel_x,
-                y: *rel_y,
+                y: start_y + *rel_y,
             };
 
             let is_active = active_side.map_or(false, |side| {
@@ -200,21 +191,60 @@ impl Ui {
         right_active_side: Option<&Direction>,
     ) -> io::Result<()> {
         // Render left MFD
-        self.render_mfd(0, left_highlight, left_active_side, false)?;
+        self.render_mfd(3, 1, left_highlight, left_active_side, false)?;
         
         // Render right MFD
-        self.render_mfd(48, right_highlight, right_active_side, true)?;
+        self.render_mfd(51, 1, right_highlight, right_active_side, true)?;
         
         Ok(())
     }
-}
 
-fn is_border_button(index: usize) -> bool {
-    // Returns true if the button is on the outer edge
-    index < 5 || // top row
-    (5..10).contains(&index) || // right side
-    (10..15).contains(&index) || // bottom row
-    index >= 15 // left side
+    fn render_status_line(&mut self, app_state: &AppState) -> io::Result<()> {
+        let status_line_y = CONSOLE_HEIGHT - 2;
+        self.stdout.queue(cursor::MoveTo(0, status_line_y))?;
+        self.stdout.queue(terminal::Clear(terminal::ClearType::CurrentLine))?;
+
+        // Get the status message based on app state
+        let status = match app_state {
+            AppState::WaitingForSide { mfd } => {
+                format!("{} MFD SELECTED", 
+                    if matches!(mfd, MfdState::LeftMfd) { "LEFT" } else { "RIGHT" })
+            }
+            AppState::SelectingOSB { mfd, side, .. } => {
+                format!("Selecting OSB on {} MFD, {} side", 
+                    if matches!(mfd, MfdState::LeftMfd) { "LEFT" } else { "RIGHT" },
+                    format!("{:?}", side).to_uppercase())
+            }
+            AppState::OSBPressed { mfd, osb_number } => {
+                format!("OSB {} pressed on {} MFD", 
+                    osb_number,
+                    if matches!(mfd, MfdState::LeftMfd) { "LEFT" } else { "RIGHT" })
+            }
+            AppState::InvalidSequence { .. } => {
+                "Invalid sequence".to_string()
+            }
+            AppState::BindingMode { waiting_for } => {
+                format!("Binding mode: Press button for {:?}", waiting_for)
+            }
+        };
+
+        // Calculate padding for centering
+        let padding = (CONSOLE_WIDTH as usize - status.len()) / 2;
+        self.stdout.queue(cursor::MoveTo(padding as u16, status_line_y))?;
+        write!(self.stdout, "{}", status)?;
+
+        Ok(())
+    }
+
+    pub fn handle_resize(&mut self, _width: u16, _height: u16, app_state: &AppState) -> io::Result<()> {
+        // Force it back
+        set_console_size(CONSOLE_WIDTH as i16, CONSOLE_HEIGHT as i16);
+        
+        // Re-render the entire UI
+        self.clear()?;
+        self.update(app_state)?;
+        Ok(())
+    }
 }
 
 impl Drop for Ui {
@@ -222,5 +252,30 @@ impl Drop for Ui {
         let _ = terminal::disable_raw_mode();
         let _ = self.stdout.queue(cursor::Show);
         let _ = self.stdout.flush();
+    }
+}
+
+fn set_console_size(width: i16, height: i16) {
+    unsafe {
+        let handle = GetStdHandle(STD_OUTPUT_HANDLE);
+        if handle == INVALID_HANDLE_VALUE {
+            return;
+        }
+
+        // First set buffer size
+        let buffer_size = COORD {
+            X: width,
+            Y: height,
+        };
+        SetConsoleScreenBufferSize(handle, buffer_size);
+
+        // Then set window size
+        let window_size = SMALL_RECT {
+            Left: 0,
+            Top: 0,
+            Right: width - 1,
+            Bottom: height - 1,
+        };
+        SetConsoleWindowInfo(handle, 1, &window_size);
     }
 } 
