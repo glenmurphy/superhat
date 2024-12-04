@@ -1,2 +1,2 @@
 #!/bin/sh
-cargo build --target-dir=c:/temp/superhat
+cargo build --target-dir=c:/temp/superhat --release
