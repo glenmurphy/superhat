@@ -50,15 +50,15 @@ pub static MFD_KEYS: &[&[Key]] = &[
     &[Key::Shift, Key::Alt, Key::Numpad0],
 ];
 
-pub fn press_button(button_number: u8) {
-    let key_combo = MFD_KEYS[button_number as usize - 1];
+pub fn press_osb(osb_number: u8) {
+    let key_combo = MFD_KEYS[osb_number as usize - 1];
     for key in key_combo.iter() {
         winky::press(*key);
     }
 }
 
-pub fn release_button(button_number: u8) {
-    let key_combo = MFD_KEYS[button_number as usize - 1];
+pub fn release_osb(osb_number: u8) {
+    let key_combo = MFD_KEYS[osb_number as usize - 1];
     for key in key_combo.iter().rev() {
         winky::release(*key);
     }
