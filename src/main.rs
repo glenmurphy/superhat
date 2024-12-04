@@ -357,16 +357,21 @@ async fn main() -> io::Result<()> {
         // Process other events
         while crossterm::event::poll(Duration::ZERO)? {
             match crossterm::event::read()? {
-                Event::Key(KeyEvent { code: KeyCode::Char('b'), kind: KeyEventKind::Press, .. }) => {
-                    enter_binding_mode(&mut app_state, &mut ui)?;
-                }
-                Event::Key(KeyEvent { code: KeyCode::Char('q'), kind: KeyEventKind::Press, .. }) => {
-                    running = false;
+                Event::Key(KeyEvent { code: KeyCode::Char(c), kind: KeyEventKind::Press, .. }) => {
+                    match c.to_ascii_lowercase() {
+                        'b' => {
+                            enter_binding_mode(&mut app_state, &mut ui)?;
+                        }
+                        'q' => {
+                            running = false;
+                        }
+                        _ => {}
+                    }
                 }
                 Event::Resize(width, height) => {
                     ui.handle_resize(width, height, &app_state)?;
                 }
-                Event::Mouse(MouseEvent { kind, .. }) => { // column, row, 
+                Event::Mouse(MouseEvent { kind, .. }) => {
                     match kind {
                         MouseEventKind::Down(_) => {
                             //println!("Mouse clicked at: ({}, {})", column, row);
