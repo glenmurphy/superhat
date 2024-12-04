@@ -14,6 +14,9 @@ use mfd_keys::{press_osb, release_osb};
 mod ui;
 use ui::Ui;
 
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, PartialEq, Clone)]
 enum MfdState {
     LeftMfd,
