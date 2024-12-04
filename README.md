@@ -1,3 +1,6 @@
+<img width="385" alt="superhat" src="https://github.com/user-attachments/assets/c4a54373-c299-4636-af91-bbc63f567be9">
+
+# Superhat
 Planes in modern combat flight simulators have two or three MFDs - square displays that have five buttons on each side (for a total of twenty buttons). To access these buttons, a user must either use their mouse inside the sim, or buy multiple expensive hardware devices.
 
 Superhat allows a single joystick 'hat' (a four-way button) to navigate the MFDs and press their buttons - a long press to the left or right 'selects' which MFD is active. A subsequent short press in any four directions starts the button-pressing mode and selects which side of the MFD, then you can select which of the five buttons using subsequent inputs using a spatial model.
