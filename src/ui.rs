@@ -52,9 +52,10 @@ struct MfdDisplay {
 }
 
 // Add these constants near the top with the other UI constants
-const BIND_TEXT_X: u16 = CONSOLE_WIDTH - 5;
-const BIND_TEXT_Y: u16 = 1;
-const BIND_TEXT: &str = "BIND";
+const BIND_TEXT_X: u16 = CONSOLE_WIDTH - 11;
+const BIND_TEXT_Y: u16 = CONSOLE_HEIGHT - 2;
+const BIND_TEXT: &str = "[REBIND]";
+const BIND_CANCEL_TEXT: &str = "[CANCEL]";
 
 impl Ui {
     pub fn new() -> io::Result<Self> {
@@ -157,8 +158,11 @@ impl Ui {
         // Render status line
         self.render_status_line(app_state)?;
 
-        // Draw the bind button
-        self.draw_bind_button()?;
+        // Draw the bind/cancel button depending on state
+        match app_state {
+            AppState::BindingMode { .. } => self.draw_cancel_button()?,
+            _ => self.draw_bind_button()?,
+        }
 
         self.stdout.flush()?;
         Ok(())
@@ -171,7 +175,7 @@ impl Ui {
                 (true, _, _) => (Color::Red, Some(Color::White)),
                 (_, true, _) => (Color::Black, Some(Color::White)),
                 (_, _, true) => (Color::Yellow, None),
-                _ => (Color::White, None),
+                _ => (Color::DarkGrey, None),
             }
         }
 
@@ -279,7 +283,8 @@ impl Ui {
                     if matches!(mfd, MfdState::LeftMfd) { "LEFT" } else { "RIGHT" })
             }
             AppState::InvalidSequence { .. } => {
-                "Invalid sequence".to_string()
+                // This is actually a waiting state, so we don't need to show anything
+                "".to_string()
             }
             AppState::BindingMode { waiting_for } => {
                 format!("Binding mode: Press button for {:?}", waiting_for)
@@ -314,7 +319,14 @@ impl Ui {
     // Simplified bind button drawing
     fn draw_bind_button(&mut self) -> io::Result<()> {
         self.stdout.queue(cursor::MoveTo(BIND_TEXT_X, BIND_TEXT_Y))?;
-        write!(self.stdout, "{}", style::style(BIND_TEXT).with(Color::Yellow))?;
+        write!(self.stdout, "{}", style::style(BIND_TEXT).with(Color::Grey))?;
+        Ok(())
+    }
+
+    // Simplified cancel button drawing
+    fn draw_cancel_button(&mut self) -> io::Result<()> {
+        self.stdout.queue(cursor::MoveTo(BIND_TEXT_X, BIND_TEXT_Y))?;
+        write!(self.stdout, "{}", style::style(BIND_CANCEL_TEXT).with(Color::Grey))?;
         Ok(())
     }
 

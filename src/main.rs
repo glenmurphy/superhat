@@ -73,10 +73,10 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             button_bindings: ButtonBindings {
-                up: (1, 23),
-                right: (1, 24),
-                down: (1, 25),
-                left: (1, 26),
+                up: (0, 0),    // Invalid binding
+                right: (0, 0), // Invalid binding
+                down: (0, 0),  // Invalid binding
+                left: (0, 0),  // Invalid binding
             }
         }
     }
@@ -237,25 +237,21 @@ fn handle_binding(button_id: u32, device_id: u32, app_state: &mut AppState, ui: 
     match waiting_for {
         Direction::Up => {
             config.button_bindings.up = (device_id, button_id);
-            println!("UP bound to device {} button {}. Press button for RIGHT", device_id, button_id);
             *app_state = AppState::BindingMode { waiting_for: Direction::Right };
             ui.update(app_state).unwrap();
         },
         Direction::Right => {
             config.button_bindings.right = (device_id, button_id);
-            println!("RIGHT bound to device {} button {}. Press button for DOWN", device_id, button_id);
             *app_state = AppState::BindingMode { waiting_for: Direction::Down };
             ui.update(app_state).unwrap();
         },
         Direction::Down => {
             config.button_bindings.down = (device_id, button_id);
-            println!("DOWN bound to device {} button {}. Press button for LEFT", device_id, button_id);
             *app_state = AppState::BindingMode { waiting_for: Direction::Left };
             ui.update(app_state).unwrap();
         },
         Direction::Left => {
             config.button_bindings.left = (device_id, button_id);
-            println!("LEFT bound to device {} button {}. Configuration complete!", device_id, button_id);
             save_config(&config);
             *app_state = AppState::InvalidSequence { mfd: MfdState::LeftMfd };
             ui.update(app_state).unwrap();
@@ -285,23 +281,41 @@ async fn main() -> io::Result<()> {
         return Ok(());
     }
 
-    *CONFIG.lock().unwrap() = Some(load_config());
+    // Load config and check if controls are bound
+    let config = load_config();
+    let controls_bound = config.button_bindings.up != (0, 0) 
+        && config.button_bindings.right != (0, 0)
+        && config.button_bindings.down != (0, 0)
+        && config.button_bindings.left != (0, 0);
+
+    *CONFIG.lock().unwrap() = Some(config);
 
     let mut gilrs = Gilrs::new().unwrap();
-    let mut app_state = AppState::WaitingForSide {
-        mfd: MfdState::LeftMfd,
+    let mut app_state = if !controls_bound {
+        AppState::BindingMode {
+            waiting_for: Direction::Up,
+        }
+    } else {
+        AppState::WaitingForSide {
+            mfd: MfdState::LeftMfd,
+        }
     };
     let mut button_press_times: HashMap<(u32, u32), Instant> = HashMap::new();
     let mut long_press_detected: bool = false;
 
+    // flush any events that happened before we started
+    std::thread::sleep(Duration::from_millis(100));
     while let Some(GilrsEvent { .. }) = gilrs.next_event() {}
+    std::thread::sleep(Duration::from_millis(100));
 
     let mut ui = Ui::new()?;
     ui.update(&app_state)?;  // Initial render
 
     let mut running = true;
     while running {
-        while let Some(GilrsEvent { id, event, .. }) = gilrs.next_event() {
+        // Need to keep an eye on this blocking code - in some situations it blocks indefinitely but is
+        // masked by axis events coming in causing it to carry through
+        while let Some(GilrsEvent { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
             match event {
                 EventType::ButtonPressed(_, code) => {
                     let button_id = code.into_u32();
@@ -409,7 +423,6 @@ async fn main() -> io::Result<()> {
         }
 
         check_for_timeouts(&mut app_state, &mut ui)?;
-        std::thread::sleep(Duration::from_millis(100));
     }
     Ok(())
 }
