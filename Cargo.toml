@@ -12,3 +12,11 @@ toml = "0.8"
 crossterm = "0.27"
 winapi = { version = "0.3", features = ["wincon", "winuser", "consoleapi", "processenv", "handleapi", "minwindef"] }
 single-instance = "0.1"
+
+[profile.release]
+# binary size reduction from https://github.com/johnthagen/min-sized-rust
+strip = true      # small impact
+opt-level = "z"   # big impact
+lto = true        # small impact
+codegen-units = 1 # small impact
+panic = "abort"   # big impact
