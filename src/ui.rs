@@ -11,7 +11,7 @@ use winapi::um::wincon::{
 use winapi::um::processenv::GetStdHandle;
 use winapi::um::winbase::STD_OUTPUT_HANDLE;
 use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-use winapi::um::winuser::{SetWindowLongA, GetWindowLongA, ShowScrollBar, SB_BOTH, GWL_STYLE, WS_SIZEBOX, WS_MAXIMIZEBOX};
+use winapi::um::winuser::{SetWindowLongA, GetWindowLongA, ShowScrollBar, SetWindowTextA, SB_BOTH, GWL_STYLE, WS_SIZEBOX, WS_MAXIMIZEBOX};
 use winapi::um::wincon::GetConsoleWindow;
 
 use crate::{AppState, Direction, MfdState};
@@ -66,6 +66,8 @@ impl Ui {
             let hwnd = GetConsoleWindow();
             SetWindowLongA(hwnd, GWL_STYLE, GetWindowLongA(hwnd, GWL_STYLE) & !(WS_MAXIMIZEBOX | WS_SIZEBOX) as i32);
             ShowScrollBar(hwnd, SB_BOTH as i32, 0);
+            let title = std::ffi::CString::new("Superhat").unwrap();
+            SetWindowTextA(hwnd, title.as_ptr());
         }
 
         let mut stdout = io::stdout();
@@ -163,57 +165,45 @@ impl Ui {
     }
 
     fn draw_button(&mut self, number: u8, pos: ButtonPosition, highlighted: bool, active: bool, pressed: bool) -> io::Result<()> {
+        // Helper to get the character style based on button state
+        fn get_colors(pressed: bool, highlighted: bool, active: bool) -> (Color, Option<Color>) {
+            match (pressed, highlighted, active) {
+                (true, _, _) => (Color::Red, Some(Color::White)),
+                (_, true, _) => (Color::Black, Some(Color::White)),
+                (_, _, true) => (Color::Yellow, None),
+                _ => (Color::White, None),
+            }
+        }
+
+        // Helper to get the character at a specific position
+        fn get_char(dx: u16, dy: u16, number: u8) -> String {
+            match (dx, dy) {
+                (0, 0) => TOP_LEFT.to_string(),
+                (5, 0) => TOP_RIGHT.to_string(),
+                (0, 2) => BOTTOM_LEFT.to_string(),
+                (5, 2) => BOTTOM_RIGHT.to_string(),
+                (_, 0) | (_, 2) => HORIZONTAL.to_string(),
+                (0, _) | (5, _) => VERTICAL.to_string(),
+                (2, 1) => format!("{:02}", number).chars().nth(0).unwrap().to_string(),
+                (3, 1) => format!("{:02}", number).chars().nth(1).unwrap().to_string(),
+                _ => " ".to_string()
+            }
+        }
+
         // Draw the 3x6 button box
         for dy in 0..3 {
             self.stdout.queue(cursor::MoveTo(pos.x, pos.y + dy))?;
             
             for dx in 0..6 {
-                let char = match (dx, dy) {
-                    (0, 0) => TOP_LEFT,
-                    (5, 0) => TOP_RIGHT,
-                    (0, 2) => BOTTOM_LEFT,
-                    (5, 2) => BOTTOM_RIGHT,
-                    (_, 0) | (_, 2) => HORIZONTAL,
-                    (0, _) | (5, _) => VERTICAL,
-                    (1..=4, 1) if dx == 2 => &format!("{:2}", number)[0..1],
-                    (1..=4, 1) if dx == 3 => &format!("{:2}", number)[1..],
-                    _ => " "
+                let char = get_char(dx, dy, number);
+                let (fg_color, bg_color) = get_colors(pressed, highlighted, active);
+                
+                let styled = match bg_color {
+                    Some(bg) => style::style(char).with(fg_color).on(bg),
+                    None => style::style(char).with(fg_color),
                 };
-
-                if pressed {
-                    // Pressed buttons are red on white
-                    write!(
-                        self.stdout,
-                        "{}",
-                        style::style(char).with(Color::Red).on(Color::White)
-                    )?;
-                } else if highlighted {
-                    // Highlighted (selected) OSB is black on white
-                    write!(
-                        self.stdout,
-                        "{}",
-                        style::style(char).with(Color::Black).on(Color::White)
-                    )?;
-                } else if active {
-                    // Active MFD buttons have yellow borders and numbers
-                    let is_border = dx == 0 || dx == 5 || dy == 0 || dy == 2;
-                    if is_border {
-                        write!(
-                            self.stdout,
-                            "{}",
-                            style::style(char).with(Color::Yellow)
-                        )?;
-                    } else {
-                        write!(
-                            self.stdout,
-                            "{}",
-                            style::style(char).with(Color::Yellow)
-                        )?;
-                    }
-                } else {
-                    // Inactive buttons are plain white
-                    write!(self.stdout, "{}", char)?;
-                }
+                
+                write!(self.stdout, "{}", styled)?;
             }
         }
         Ok(())
