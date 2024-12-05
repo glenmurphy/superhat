@@ -14,6 +14,8 @@ use mfd_keys::{press_osb, release_osb};
 mod ui;
 use ui::Ui;
 
+use single_instance::SingleInstance;
+
 #[cfg(test)]
 mod tests;
 
@@ -277,6 +279,12 @@ fn load_config() -> Config {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
+    let single = SingleInstance::new("superhat").unwrap();
+    if !single.is_single() {
+        println!("SuperHat is already running!");
+        return Ok(());
+    }
+
     *CONFIG.lock().unwrap() = Some(load_config());
 
     let mut gilrs = Gilrs::new().unwrap();
@@ -374,10 +382,24 @@ async fn main() -> io::Result<()> {
                 Event::Resize(width, height) => {
                     ui.handle_resize(width, height, &app_state)?;
                 }
-                Event::Mouse(MouseEvent { kind, .. }) => {
+                Event::Mouse(MouseEvent { kind, column, row, .. }) => {
                     match kind {
                         MouseEventKind::Down(_) => {
-                            //println!("Mouse clicked at: ({}, {})", column, row);
+                            if ui.is_bind_button_click(column, row) {
+                                match app_state {
+                                    AppState::BindingMode { .. } => {
+                                        // Exit binding mode (TODO: don't reset the MFD)
+                                        app_state = AppState::WaitingForSide { 
+                                            mfd: MfdState::LeftMfd 
+                                        };
+                                        ui.update(&app_state)?;
+                                    },
+                                    _ => {
+                                        // Enter binding mode
+                                        enter_binding_mode(&mut app_state, &mut ui)?;
+                                    }
+                                }
+                            }
                         }
                         _ => {}
                     }

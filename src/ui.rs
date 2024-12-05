@@ -11,7 +11,7 @@ use winapi::um::wincon::{
 use winapi::um::processenv::GetStdHandle;
 use winapi::um::winbase::STD_OUTPUT_HANDLE;
 use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-use winapi::um::winuser::{SetWindowLongA, GetWindowLongA, GWL_STYLE, WS_SIZEBOX, WS_MAXIMIZEBOX};
+use winapi::um::winuser::{SetWindowLongA, GetWindowLongA, ShowScrollBar, SB_BOTH, GWL_STYLE, WS_SIZEBOX, WS_MAXIMIZEBOX};
 use winapi::um::wincon::GetConsoleWindow;
 
 use crate::{AppState, Direction, MfdState};
@@ -51,6 +51,11 @@ struct MfdDisplay {
     pressed_osb: Option<u8>,
 }
 
+// Add these constants near the top with the other UI constants
+const BIND_TEXT_X: u16 = CONSOLE_WIDTH - 5;
+const BIND_TEXT_Y: u16 = 1;
+const BIND_TEXT: &str = "BIND";
+
 impl Ui {
     pub fn new() -> io::Result<Self> {
         // Set console size before initializing
@@ -60,6 +65,7 @@ impl Ui {
         unsafe {
             let hwnd = GetConsoleWindow();
             SetWindowLongA(hwnd, GWL_STYLE, GetWindowLongA(hwnd, GWL_STYLE) & !(WS_MAXIMIZEBOX | WS_SIZEBOX) as i32);
+            ShowScrollBar(hwnd, SB_BOTH as i32, 0);
         }
 
         let mut stdout = io::stdout();
@@ -148,6 +154,9 @@ impl Ui {
 
         // Render status line
         self.render_status_line(app_state)?;
+
+        // Draw the bind button
+        self.draw_bind_button()?;
 
         self.stdout.flush()?;
         Ok(())
@@ -310,6 +319,19 @@ impl Ui {
         self.clear()?;
         self.update(app_state)?;
         Ok(())
+    }
+
+    // Simplified bind button drawing
+    fn draw_bind_button(&mut self) -> io::Result<()> {
+        self.stdout.queue(cursor::MoveTo(BIND_TEXT_X, BIND_TEXT_Y))?;
+        write!(self.stdout, "{}", style::style(BIND_TEXT).with(Color::Yellow))?;
+        Ok(())
+    }
+
+    // Simplified click detection
+    pub fn is_bind_button_click(&self, x: u16, y: u16) -> bool {
+        x >= BIND_TEXT_X && x < BIND_TEXT_X + BIND_TEXT.len() as u16 &&
+        y == BIND_TEXT_Y
     }
 }
 
