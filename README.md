@@ -1,5 +1,5 @@
 # Superhat
-<img width="385" alt="superhat" src="https://github.com/user-attachments/assets/c4a54373-c299-4636-af91-bbc63f567be9">
+<img width="384" alt="superhat" src="https://github.com/user-attachments/assets/4428a76f-915b-440a-b131-f4e452425f55">
 
 Planes in modern combat flight simulators have two or three MFDs - square displays that have five buttons (OSBs - Option Selection Buttons) on each side for a total of twenty. To access these buttons, a user must either use their mouse inside the sim, or buy multiple expensive hardware devices. In some situations it is also not convenient to have to take your hand off the joystick to interact with the MFDs. Superhat addresses this by allowing a single joystick 'hat' (a four-way button) to navigate the MFDs and press those OSBs.
 
@@ -18,10 +18,9 @@ To use the right side as an example:
 The final press of the hatswitch presses the in-game OSB until you let go - this allows you to do short and long presses in-game.
 
 ## Setup
-<<<<<<< HEAD
 To use the software, download it from [the releases page](https://github.com/glenmurphy/superhat/releases) (expand the 'Assets' section under the latest version), run it, follow the binding instructions and enter your hat directions. Then launch your game and keep Superhat running in the background. When an OSB is pressed in Superhat, the software will emit the default Falcon BMS keyboard shortcuts for the OSBs. You can rebind your controls by pressing 'b' or clicking on the bind button.
 
-If you have changed your BMS config, you can use the [/config/BMS - Superhat.key](./config/BMS%20-%20Superhat.key) file to restore the bindings.
+If you have changed your BMS config, you can use the [/config/BMS - Superhat.key](./config/BMS%20-%20Superhat.key) file to restore the default bindings.
 
 I recommend moving the F-16 DMS to a hat on the throttle if you have the space, and leaving a hat on the stick for Superhat. Remember to unbind any existing BMS controls on that hat.
 
