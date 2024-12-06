@@ -18,7 +18,7 @@ To use the right side as an example:
 The final press of the hatswitch presses the in-game OSB until you let go - this allows you to do short and long presses in-game.
 
 ## Setup
-To use the software, download it from [the releases page](https://github.com/glenmurphy/superhat/releases) (expand the 'Assets' section under the latest version), run it, follow the binding instructions and enter your hat directions. When an OSB is pressed, the software will emit the default Falcon BMS keyboard shortcuts for the OSBs. You can rebind your controls by pressing 'b' or clicking on the bind button.
+To use the software, download it from [the releases page](https://github.com/glenmurphy/superhat/releases) (expand the 'Assets' section under the latest version), run it, follow the binding instructions and enter your hat directions. Then launch your game and keep Superhat running in the background. When an OSB is pressed in Superhat, the software will emit the default Falcon BMS keyboard shortcuts for the OSBs. You can rebind your controls by pressing 'b' or clicking on the bind button.
 
 I recommend moving the F-16 DMS to a hat on the throttle if you have the space, and leaving a hat on the stick for Superhat. Remember to unbind any existing BMS controls on that hat.
 
