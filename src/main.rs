@@ -14,10 +14,9 @@ use mfd_keys::{press_osb, release_osb};
 mod ui;
 use ui::Ui;
 
-use single_instance::SingleInstance;
-
 #[cfg(test)]
 mod tests;
+mod winstance;
 
 #[derive(Debug, PartialEq, Clone)]
 enum MfdState {
@@ -275,11 +274,16 @@ fn load_config() -> Config {
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
-    let single = SingleInstance::new("superhat").unwrap();
-    if !single.is_single() {
-        println!("SuperHat is already running!");
-        return Ok(());
-    }
+    // Create UI first - this handles single instance check
+    let mut ui = match Ui::new() {
+        Ok(ui) => ui,
+        Err(e) => {
+            if e.kind() == io::ErrorKind::Other {
+                return Ok(()); // Exit quietly if another instance is running
+            }
+            return Err(e);    // Propagate other errors
+        }
+    };
 
     // Load config and check if controls are bound
     let config = load_config();
@@ -307,9 +311,6 @@ async fn main() -> io::Result<()> {
     std::thread::sleep(Duration::from_millis(100));
     while let Some(GilrsEvent { .. }) = gilrs.next_event() {}
     std::thread::sleep(Duration::from_millis(100));
-
-    let mut ui = Ui::new()?;
-    ui.update(&app_state)?;  // Initial render
 
     let mut running = true;
     while running {

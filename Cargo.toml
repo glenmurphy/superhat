@@ -10,8 +10,7 @@ winky = { git = "https://github.com/glenmurphy/winky/" }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 crossterm = "0.27"
-winapi = { version = "0.3", features = ["wincon", "winuser", "consoleapi", "processenv", "handleapi", "minwindef"] }
-single-instance = "0.1"
+winapi = { version = "0.3", features = ["wincon", "winuser", "consoleapi", "processenv", "handleapi", "minwindef", "errhandlingapi", "synchapi"] }
 
 [profile.release]
 # binary size reduction from https://github.com/johnthagen/min-sized-rust

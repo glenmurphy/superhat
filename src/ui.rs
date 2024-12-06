@@ -10,11 +10,10 @@ use winapi::um::wincon::{
 };
 use winapi::um::processenv::GetStdHandle;
 use winapi::um::winbase::STD_OUTPUT_HANDLE;
-use winapi::um::handleapi::INVALID_HANDLE_VALUE;
-use winapi::um::winuser::{SetWindowLongA, GetWindowLongA, ShowScrollBar, SetWindowTextA, SB_BOTH, GWL_STYLE, WS_SIZEBOX, WS_MAXIMIZEBOX};
-use winapi::um::wincon::GetConsoleWindow;
+use winapi::um::handleapi::{INVALID_HANDLE_VALUE};
 
 use crate::{AppState, Direction, MfdState};
+use crate::winstance::WindowInstance;
 
 const TOP_LEFT: &str = "┌";
 const TOP_RIGHT: &str = "┐";
@@ -39,6 +38,9 @@ struct HighlightedButton {
 
 pub struct Ui {
     stdout: io::Stdout,
+    // Keeps the window instance alive to maintain the mutex lock
+    #[allow(dead_code)]
+    window: WindowInstance,
 }
 
 const CONSOLE_WIDTH: u16 = 96;
@@ -59,17 +61,10 @@ const BIND_CANCEL_TEXT: &str = "[CANCEL]";
 
 impl Ui {
     pub fn new() -> io::Result<Self> {
+        let window = WindowInstance::new("Superhat")?;
+
         // Set console size before initializing
         set_console_size(CONSOLE_WIDTH as i16, CONSOLE_HEIGHT as i16);
-
-        // Disable window resizing
-        unsafe {
-            let hwnd = GetConsoleWindow();
-            SetWindowLongA(hwnd, GWL_STYLE, GetWindowLongA(hwnd, GWL_STYLE) & !(WS_MAXIMIZEBOX | WS_SIZEBOX) as i32);
-            ShowScrollBar(hwnd, SB_BOTH as i32, 0);
-            let title = std::ffi::CString::new("Superhat").unwrap();
-            SetWindowTextA(hwnd, title.as_ptr());
-        }
 
         let mut stdout = io::stdout();
         terminal::enable_raw_mode()?;
@@ -80,7 +75,7 @@ impl Ui {
             event::EnableMouseCapture
         )?;
         
-        let mut ui = Ui { stdout };
+        let mut ui = Ui { stdout, window };
         ui.stdout.queue(cursor::Hide)?;
         ui.stdout.flush()?;
 
