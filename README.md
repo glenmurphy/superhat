@@ -18,11 +18,19 @@ To use the right side as an example:
 The final press of the hatswitch presses the in-game OSB until you let go - this allows you to do short and long presses in-game.
 
 ## Setup
-To use the software, download it from [the releases page](https://github.com/glenmurphy/superhat/releases), run it, and press the 'b' key to enter binding mode and enter your hat directions. When an OSB is pressed, the software will emit the default Falcon BMS 4.37 keyboard shortcuts for the OSBs (you should be able to map these in DCS).
+<<<<<<< HEAD
+To use the software, download it from [the releases page](https://github.com/glenmurphy/superhat/releases) (expand the 'Assets' section under the latest version), run it, follow the binding instructions and enter your hat directions. Then launch your game and keep Superhat running in the background. When an OSB is pressed in Superhat, the software will emit the default Falcon BMS keyboard shortcuts for the OSBs. You can rebind your controls by pressing 'b' or clicking on the bind button.
 
 If you have changed your BMS config, you can use the [/config/BMS - Superhat.key](./config/BMS%20-%20Superhat.key) file to restore the bindings.
 
 I recommend moving the F-16 DMS to a hat on the throttle if you have the space, and leaving a hat on the stick for Superhat. Remember to unbind any existing BMS controls on that hat.
+
+### DCS setup
+You will need to bind the keys that superhat emits - unfortunately this is pretty manual process of adding the modifiers:
+- Left MFD OSB1-10: Ctrl+Alt+1,2,3..0
+- Left MFD OSB11-20: Ctrl+Alt+Numpad1,Numpad2..0
+- Right MFD OSB1-10: Ctrl+Shift+1,2,3...0
+- Right MFD OSB11-20: Ctrl+Shift+Numpad1,Numpad2..0
 
 ## Feedback
 Superhat is a prototype - please submit feedback via email to [glen@glenmurphy.com](mailto:glen@glenmurphy.com)
