@@ -105,7 +105,7 @@ fn handle_input_event(
     };
 
     match (event_type, &*app_state) {
-        // Handle long press for MFD selection - only in WaitingForSide state
+        // Handle long press for MFD selection
         (InputEventType::LongPress, AppState::WaitingForSide { .. }) => {
             if let Direction::Left | Direction::Right = direction {
                 let selected_mfd = match direction {
@@ -113,30 +113,27 @@ fn handle_input_event(
                     Direction::Right => MfdState::RightMfd,
                     _ => unreachable!(),
                 };
-                // println!("MFD Selected: {:?}", selected_mfd);
+                // Immediately update the state when long press is detected
                 *app_state = AppState::WaitingForSide {
                     mfd: selected_mfd,
                 };
             }
         },
-        // Handle button releases in WaitingForSide state
+        // Handle button releases in WaitingForSide state - ONLY if no long press was detected
         (InputEventType::ButtonUp, AppState::WaitingForSide { .. }) => {
-            // Only process as a short press if no long press was detected
             if !long_press_detected {
                 handle_short_press(direction, app_state);
             }
         },
-        // Handle subsequent button presses
+        // Ignore button down events in WaitingForSide state to prevent accidental triggers
+        (InputEventType::ButtonDown, AppState::WaitingForSide { .. }) => {},
+        // Rest of the cases remain the same
         (InputEventType::ButtonDown, AppState::SelectingOSB { .. }) => {
             handle_short_press(direction, app_state);
         },
-        // Handle button releases
         (InputEventType::ButtonUp, _) => {
             handle_release(app_state);
         },
-        // Ignore initial button presses in WaitingForSide state
-        (InputEventType::ButtonDown, AppState::WaitingForSide { .. }) => {},
-        // Handle other button presses
         (InputEventType::ButtonDown, _) => {
             handle_short_press(direction, app_state);
         },
@@ -313,6 +310,7 @@ async fn main() -> io::Result<()> {
             mfd: MfdState::LeftMfd,
         }
     };
+    
     let mut button_press_times: HashMap<(u32, u32), Instant> = HashMap::new();
     let mut long_press_detected: bool = false;
 
@@ -320,7 +318,9 @@ async fn main() -> io::Result<()> {
     std::thread::sleep(Duration::from_millis(100));
     while let Some(GilrsEvent { .. }) = gilrs.next_event() {}
     std::thread::sleep(Duration::from_millis(100));
-
+    
+    ui.update(&app_state)?;
+    
     let mut running = true;
     while running {
         // Need to keep an eye on this blocking code - in some situations it blocks indefinitely but is
@@ -376,6 +376,7 @@ async fn main() -> io::Result<()> {
         for (&(device_id, button_id), &press_time) in button_press_times.iter() {
             if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
                 if let Some(_) = map_button_to_direction(device_id, button_id) {
+                    long_press_detected = true;  // Set this before handling the event
                     handle_input_event(
                         InputEventType::LongPress,
                         button_id,
@@ -383,7 +384,6 @@ async fn main() -> io::Result<()> {
                         &mut app_state,
                         true
                     );
-                    long_press_detected = true;
                     ui.update(&app_state).unwrap();
                 }
             }
