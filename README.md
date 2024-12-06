@@ -24,10 +24,10 @@ I recommend moving the F-16 DMS to a hat on the throttle if you have the space, 
 
 ### DCS setup
 You will need to bind the keys that superhat emits - unfortunately this is pretty manual process of adding the modifiers:
-Left MFD OSB1-10: Ctrl+Alt+1,2,3..0
-Left MFD OSB11-20: Ctrl+Alt+Numpad1,Numpad2..0
-Right MFD OSB1-10: Ctrl+Shift+1,2,3...0
-Right MFD OSB11-20: Ctrl+Shift+Numpad1,Numpad2..0
+- Left MFD OSB1-10: Ctrl+Alt+1,2,3..0
+- Left MFD OSB11-20: Ctrl+Alt+Numpad1,Numpad2..0
+- Right MFD OSB1-10: Ctrl+Shift+1,2,3...0
+- Right MFD OSB11-20: Ctrl+Shift+Numpad1,Numpad2..0
 
 ## Feedback
 Superhat is a prototype - please submit feedback via email to [glen@glenmurphy.com](mailto:glen@glenmurphy.com)
