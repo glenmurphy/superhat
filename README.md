@@ -1,7 +1,7 @@
 # Superhat
 <img width="384" alt="superhat" src="https://github.com/user-attachments/assets/4428a76f-915b-440a-b131-f4e452425f55">
 
-Planes in modern combat flight simulators have two or three MFDs - square displays that have five buttons (OSBs - Option Selection Buttons) on each side for a total of twenty. To access these buttons, a user must either use their mouse inside the sim, or buy multiple expensive hardware devices. In some situations it is also not convenient to have to take your hand off the joystick to interact with the MFDs. Superhat addresses this by allowing a single joystick 'hat' (a four-way button) to navigate the MFDs and press those OSBs.
+Planes in modern combat flight simulators have two or three MFDs - square displays that have five buttons (OSBs - Option Selection Buttons) on each side for a total of twenty per MFD. To access these buttons, a user must either use their mouse inside the sim, or buy multiple expensive hardware devices. In some situations it is also not convenient to have to take your hand off the joystick to interact with the MFDs. Superhat addresses this by allowing a single joystick 'hat' (a four-way button) to navigate the MFDs and press those OSBs.
 
 ## How it works
 A long press to the left or right 'selects' which MFD is active.
