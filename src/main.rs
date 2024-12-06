@@ -285,6 +285,16 @@ async fn main() -> io::Result<()> {
         }
     };
 
+    let mut gilrs = Gilrs::new().unwrap();
+
+    // Only do the startup delay in release builds, not during tests
+    #[cfg(not(test))]
+    {
+        // Wait 200ms and flush any pending events
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        while gilrs.next_event().is_some() {}
+    }
+
     // Load config and check if controls are bound
     let config = load_config();
     let controls_bound = config.button_bindings.up != (0, 0) 
@@ -294,7 +304,6 @@ async fn main() -> io::Result<()> {
 
     *CONFIG.lock().unwrap() = Some(config);
 
-    let mut gilrs = Gilrs::new().unwrap();
     let mut app_state = if !controls_bound {
         AppState::BindingMode {
             waiting_for: Direction::Up,

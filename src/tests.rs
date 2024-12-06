@@ -1,7 +1,13 @@
 use super::*;
 
 fn setup_test_config() {
-    let config = Config::default();
+    let mut config = Config::default();
+    config.button_bindings = ButtonBindings {
+        up: (1, 1),
+        right: (1, 2),
+        down: (1, 3),
+        left: (1, 4),
+    };
     *CONFIG.lock().unwrap() = Some(config);
 }
 
@@ -11,12 +17,11 @@ fn simulate_button_event(
     app_state: &mut AppState,
     long_press_detected: bool,
 ) {
-    let config = Config::default();
     let (device_id, button_id) = match direction {
-        Direction::Up => config.button_bindings.up,
-        Direction::Right => config.button_bindings.right,
-        Direction::Down => config.button_bindings.down,
-        Direction::Left => config.button_bindings.left,
+        Direction::Up => (1, 1),
+        Direction::Right => (1, 2),
+        Direction::Down => (1, 3),
+        Direction::Left => (1, 4),
     };
 
     handle_input_event(event_type, button_id, device_id, app_state, long_press_detected);
