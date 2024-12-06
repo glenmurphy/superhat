@@ -325,7 +325,7 @@ async fn main() -> io::Result<()> {
     while running {
         // Need to keep an eye on this blocking code - in some situations it blocks indefinitely but is
         // masked by axis events coming in causing it to carry through
-        while let Some(GilrsEvent { id, event, .. }) = gilrs.next_event_blocking(Some(Duration::from_millis(100))) {
+        while let Some(GilrsEvent { id, event, .. }) = gilrs.next_event() {
             match event {
                 EventType::ButtonPressed(_, code) => {
                     let button_id = code.into_u32();
@@ -433,6 +433,7 @@ async fn main() -> io::Result<()> {
         }
 
         check_for_timeouts(&mut app_state, &mut ui)?;
+        std::thread::sleep(Duration::from_millis(100));
     }
     Ok(())
 }
