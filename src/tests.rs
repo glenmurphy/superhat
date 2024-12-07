@@ -262,3 +262,52 @@ fn test_osb_numbering() {
         simulate_button_event(InputEventType::ButtonUp, side, &mut app_state, false);
     }
 }
+
+#[test]
+fn test_long_press_detection() {
+    setup_test_config();
+    let mut app_state = AppState::WaitingForSide { mfd: MfdState::LeftMfd };
+    let mut button_press_times = HashMap::new();
+    let mut long_press_detected = false;
+    
+    // Simulate button press
+    let device_id = 1;
+    let button_id = 2;  // Right button
+    button_press_times.insert((device_id, button_id), Instant::now());
+    
+    // Initial press should not trigger long press
+    handle_input_event(InputEventType::ButtonDown, button_id, device_id, &mut app_state, long_press_detected);
+    assert!(matches!(app_state, AppState::WaitingForSide { mfd: MfdState::LeftMfd }));
+    
+    // Wait just under long press duration
+    std::thread::sleep(LONGPRESS_DURATION - Duration::from_millis(100));
+    
+    // Check press times - should not trigger long press yet
+    for (&(dev, btn), &press_time) in button_press_times.iter() {
+        if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
+            if let Some(_) = map_button_to_direction(dev, btn) {
+                long_press_detected = true;
+                handle_input_event(InputEventType::LongPress, btn, dev, &mut app_state, true);
+            }
+        }
+    }
+    assert!(matches!(app_state, AppState::WaitingForSide { mfd: MfdState::LeftMfd }));
+    assert!(!long_press_detected);
+    
+    // Wait remainder of long press duration plus a small buffer
+    std::thread::sleep(Duration::from_millis(150));
+    
+    // Check press times again - should trigger long press now
+    for (&(dev, btn), &press_time) in button_press_times.iter() {
+        if !long_press_detected && press_time.elapsed() >= LONGPRESS_DURATION {
+            if let Some(_) = map_button_to_direction(dev, btn) {
+                long_press_detected = true;
+                handle_input_event(InputEventType::LongPress, btn, dev, &mut app_state, true);
+            }
+        }
+    }
+    
+    // Verify long press was detected and state changed to right MFD
+    assert!(long_press_detected);
+    assert!(matches!(app_state, AppState::WaitingForSide { mfd: MfdState::RightMfd }));
+}
