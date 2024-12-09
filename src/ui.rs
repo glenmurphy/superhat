@@ -58,6 +58,12 @@ const BIND_TEXT_Y: u16 = CONSOLE_HEIGHT - 2;
 const BIND_TEXT: &str = "[REBIND]";
 const BIND_CANCEL_TEXT: &str = "[CANCEL]";
 
+// Add these constants near the other UI constants
+const SOUND_TEXT_X: u16 = 2;
+const SOUND_TEXT_Y: u16 = CONSOLE_HEIGHT - 2;
+const SOUND_ON_TEXT: &str = "[SOUND:ON]";
+const SOUND_OFF_TEXT: &str = "[SOUND:OFF]";
+
 impl Ui {
     pub fn new() -> io::Result<Self> {
         let window = WindowInstance::new("Superhat")?;
@@ -157,6 +163,9 @@ impl Ui {
             AppState::BindingMode { .. } => self.draw_cancel_button()?,
             _ => self.draw_bind_button()?,
         }
+
+        // Draw the sound button (add this before the final flush)
+        self.draw_sound_button()?;
 
         self.stdout.flush()?;
         Ok(())
@@ -328,6 +337,21 @@ impl Ui {
     pub fn is_bind_button_click(&self, x: u16, y: u16) -> bool {
         x >= BIND_TEXT_X && x < BIND_TEXT_X + BIND_TEXT.len() as u16 &&
         y == BIND_TEXT_Y
+    }
+
+    // Add this new method
+    fn draw_sound_button(&mut self) -> io::Result<()> {
+        self.stdout.queue(cursor::MoveTo(SOUND_TEXT_X, SOUND_TEXT_Y))?;
+        let sound_enabled = *crate::SOUND_ENABLED.lock().unwrap();
+        let text = if sound_enabled { SOUND_ON_TEXT } else { SOUND_OFF_TEXT };
+        write!(self.stdout, "{}", style::style(text).with(Color::Grey))?;
+        Ok(())
+    }
+
+    pub fn is_sound_button_click(&self, x: u16, y: u16) -> bool {
+        x >= SOUND_TEXT_X && 
+        x < SOUND_TEXT_X + SOUND_ON_TEXT.len() as u16 && 
+        y == SOUND_TEXT_Y
     }
 }
 

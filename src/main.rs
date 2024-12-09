@@ -20,7 +20,7 @@ mod winstance;
 mod sound;
 use sound::{ClickSound, play_click};
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 enum MfdState {
     LeftMfd,
     RightMfd,
@@ -57,12 +57,14 @@ enum AppState {
     },
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct Config {
     button_bindings: ButtonBindings,
+    selected_mfd: MfdState,
+    sound_enabled: bool,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 struct ButtonBindings {
     up: (u32, u32),    // (device_id, button_code)
     right: (u32, u32),
@@ -78,12 +80,15 @@ impl Default for Config {
                 right: (0, 0), // Invalid binding
                 down: (0, 0),  // Invalid binding
                 left: (0, 0),  // Invalid binding
-            }
+            },
+            selected_mfd: MfdState::LeftMfd,
+            sound_enabled: true,
         }
     }
 }
 
 static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
+static SOUND_ENABLED: Mutex<bool> = Mutex::new(true);
 
 const TIMEOUT_DURATION: Duration = Duration::from_millis(1500);
 const LONGPRESS_DURATION: Duration = Duration::from_millis(500);
@@ -112,16 +117,23 @@ fn handle_input_event(
             if let Direction::Left | Direction::Right = direction {
                 let selected_mfd = match direction {
                     Direction::Left => {
-                        play_click(ClickSound::Left);
+                        if *SOUND_ENABLED.lock().unwrap() {
+                            play_click(ClickSound::Left);
+                        }
                         MfdState::LeftMfd
                     },
                     Direction::Right => {
-                        play_click(ClickSound::Right);
+                        if *SOUND_ENABLED.lock().unwrap() {
+                            play_click(ClickSound::Right);
+                        }
                         MfdState::RightMfd
                     },
                     _ => unreachable!(),
                 };
-                // Immediately update the state when long press is detected
+                
+                // Save MFD state to config
+                save_mfd_state(selected_mfd.clone());
+                
                 *app_state = AppState::WaitingForSide {
                     mfd: selected_mfd,
                 };
@@ -277,6 +289,15 @@ fn load_config() -> Config {
     }
 }
 
+fn save_mfd_state(mfd: MfdState) {
+    if let Ok(mut config_lock) = CONFIG.lock() {
+        if let Some(config) = config_lock.as_mut() {
+            config.selected_mfd = mfd;
+            save_config(&config);
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     // Create UI first - this handles single instance check
@@ -307,7 +328,10 @@ async fn main() -> io::Result<()> {
         && config.button_bindings.down != (0, 0)
         && config.button_bindings.left != (0, 0);
 
-    *CONFIG.lock().unwrap() = Some(config);
+    // Initialize sound state from config
+    *SOUND_ENABLED.lock().unwrap() = config.sound_enabled;
+
+    *CONFIG.lock().unwrap() = Some(config.clone());  // Clone if needed
 
     let mut app_state = if !controls_bound {
         AppState::BindingMode {
@@ -315,7 +339,7 @@ async fn main() -> io::Result<()> {
         }
     } else {
         AppState::WaitingForSide {
-            mfd: MfdState::LeftMfd,
+            mfd: config.selected_mfd,
         }
     };
     
@@ -431,6 +455,22 @@ async fn main() -> io::Result<()> {
                                         enter_binding_mode(&mut app_state, &mut ui)?;
                                     }
                                 }
+                            } else if ui.is_sound_button_click(column, row) {
+                                // Scope the lock to ensure it's released before calling update
+                                {
+                                    let mut sound_enabled = SOUND_ENABLED.lock().unwrap();
+                                    *sound_enabled = !*sound_enabled;
+                                    
+                                    // Save sound state to config
+                                    if let Ok(mut config_lock) = CONFIG.lock() {
+                                        if let Some(config) = config_lock.as_mut() {
+                                            config.sound_enabled = *sound_enabled;
+                                            save_config(&config);
+                                        }
+                                    }
+                                } // Lock is released here
+                                
+                                ui.update(&app_state)?;
                             }
                         }
                         _ => {}
