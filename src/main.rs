@@ -1,8 +1,6 @@
 use gilrs::{Gilrs, Event as GilrsEvent, EventType};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use std::fs;
-use std::path::Path;
 use serde::{Serialize, Deserialize};
 use std::sync::Mutex;
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, MouseEvent, MouseEventKind};
@@ -19,6 +17,9 @@ mod tests;
 mod winstance;
 mod sound;
 use sound::{ClickSound, play_click};
+
+mod config;
+use config::{CONFIG, save_config, load_config, save_mfd_state};
 
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
 enum MfdState {
@@ -57,37 +58,6 @@ enum AppState {
     },
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Config {
-    button_bindings: ButtonBindings,
-    selected_mfd: MfdState,
-    sound_enabled: bool,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct ButtonBindings {
-    up: (u32, u32),    // (device_id, button_code)
-    right: (u32, u32),
-    down: (u32, u32),
-    left: (u32, u32),
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Config {
-            button_bindings: ButtonBindings {
-                up: (0, 0),    // Invalid binding
-                right: (0, 0), // Invalid binding
-                down: (0, 0),  // Invalid binding
-                left: (0, 0),  // Invalid binding
-            },
-            selected_mfd: MfdState::LeftMfd,
-            sound_enabled: true,
-        }
-    }
-}
-
-static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 static SOUND_ENABLED: Mutex<bool> = Mutex::new(true);
 
 const TIMEOUT_DURATION: Duration = Duration::from_millis(1500);
@@ -272,29 +242,6 @@ fn handle_binding(button_id: u32, device_id: u32, app_state: &mut AppState, ui: 
             *app_state = AppState::InvalidSequence { mfd: MfdState::LeftMfd };
             ui.update(app_state).unwrap();
         },
-    }
-}
-
-fn save_config(config: &Config) {
-    let config_str = toml::to_string(config).unwrap();
-    fs::write("superhat.cfg", config_str).expect("Failed to write config file");
-}
-
-fn load_config() -> Config {
-    if Path::new("superhat.cfg").exists() {
-        let config_str = fs::read_to_string("superhat.cfg").expect("Failed to read config file");
-        toml::from_str(&config_str).unwrap_or_default()
-    } else {
-        Config::default()
-    }
-}
-
-fn save_mfd_state(mfd: MfdState) {
-    if let Ok(mut config_lock) = CONFIG.lock() {
-        if let Some(config) = config_lock.as_mut() {
-            config.selected_mfd = mfd;
-            save_config(&config);
-        }
     }
 }
 

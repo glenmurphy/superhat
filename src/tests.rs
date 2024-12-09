@@ -1,4 +1,6 @@
 use super::*;
+use crate::config::Config;
+use crate::config::ButtonBindings;
 
 fn setup_test_config() {
     let mut config = Config::default();
