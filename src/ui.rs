@@ -5,12 +5,11 @@ use crossterm::{
     event,
 };
 use std::io::{self, Write};
-use winapi::um::wincon::{
-    COORD, SMALL_RECT, SetConsoleWindowInfo, SetConsoleScreenBufferSize,
+use windows::Win32::Foundation::HANDLE;
+use windows::Win32::System::Console::{
+    GetStdHandle, SetConsoleScreenBufferSize, SetConsoleWindowInfo,
+    STD_OUTPUT_HANDLE, COORD, SMALL_RECT,
 };
-use winapi::um::processenv::GetStdHandle;
-use winapi::um::winbase::STD_OUTPUT_HANDLE;
-use winapi::um::handleapi::{INVALID_HANDLE_VALUE};
 
 use crate::{AppState, Direction, MfdState};
 use crate::winstance::WindowInstance;
@@ -345,8 +344,8 @@ impl Drop for Ui {
 
 fn set_console_size(width: i16, height: i16) {
     unsafe {
-        let handle = GetStdHandle(STD_OUTPUT_HANDLE);
-        if handle == INVALID_HANDLE_VALUE {
+        let handle = GetStdHandle(STD_OUTPUT_HANDLE).expect("Failed to get console handle");
+        if handle == HANDLE(0) {
             return;
         }
 
@@ -355,7 +354,7 @@ fn set_console_size(width: i16, height: i16) {
             X: width,
             Y: height,
         };
-        SetConsoleScreenBufferSize(handle, buffer_size);
+        let _ = SetConsoleScreenBufferSize(handle, buffer_size);
 
         // Then set window size
         let window_size = SMALL_RECT {
@@ -364,7 +363,7 @@ fn set_console_size(width: i16, height: i16) {
             Right: width - 1,
             Bottom: height - 1,
         };
-        SetConsoleWindowInfo(handle, 1, &window_size);
+        let _ = SetConsoleWindowInfo(handle, true, &window_size);
     }
 }
 

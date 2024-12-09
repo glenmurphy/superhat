@@ -571,7 +571,6 @@ dependencies = [
  "serde",
  "tokio",
  "toml",
- "winapi",
  "windows 0.48.0",
  "winky",
 ]

@@ -1,15 +1,15 @@
 use std::ffi::CString;
-use winapi::um::synchapi::CreateMutexW;
-use winapi::um::errhandlingapi::GetLastError;
-use winapi::shared::winerror::ERROR_ALREADY_EXISTS;
-use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
-use winapi::shared::ntdef::HANDLE;
-use winapi::um::winuser::{
-    FindWindowA, SetForegroundWindow, ShowWindow, SW_RESTORE,
-    SetWindowLongA, GetWindowLongA, ShowScrollBar, SetWindowTextA,
-    GWL_STYLE, WS_MAXIMIZEBOX, WS_SIZEBOX, SB_BOTH,
+use windows::Win32::Foundation::{HANDLE, HWND, BOOL, CloseHandle, GetLastError, ERROR_ALREADY_EXISTS};
+use windows::Win32::System::Threading::CreateMutexW;
+use windows::Win32::UI::WindowsAndMessaging::{
+    FindWindowA, SetForegroundWindow, ShowWindow, 
+    SetWindowLongA, GetWindowLongA, SW_RESTORE,
+    GWL_STYLE, WS_MAXIMIZEBOX, WS_SIZEBOX, WINDOW_STYLE,
+    SB_BOTH, SetWindowTextA,
 };
-use winapi::um::wincon::GetConsoleWindow;
+use windows::Win32::UI::Controls::ShowScrollBar;
+use windows::Win32::System::Console::GetConsoleWindow;
+use windows::core::{PCSTR, PCWSTR};
 use std::io;
 
 pub struct WindowInstance {
@@ -27,17 +27,27 @@ impl WindowInstance {
     fn check_existing_instance(window_title: &str) -> Option<HANDLE> {
         let wide_name = Self::create_mutex_name(window_title);
         unsafe {
-            let handle = CreateMutexW(std::ptr::null_mut(), 0, wide_name.as_ptr());
-            if handle == INVALID_HANDLE_VALUE {
+            let handle = CreateMutexW(
+                None,
+                BOOL::from(false),
+                PCWSTR::from_raw(wide_name.as_ptr()),
+            ).expect("Failed to create mutex");
+            
+            if handle == HANDLE(0) {
                 return None; // Failed to create mutex
             }
+            
             if GetLastError() == ERROR_ALREADY_EXISTS {
-                CloseHandle(handle);
+                CloseHandle(handle).expect("Failed to close handle");
 
                 // Find and refocus the existing window
                 let window_name = CString::new(window_title).unwrap();
-                let existing_window = FindWindowA(std::ptr::null(), window_name.as_ptr());
-                if !existing_window.is_null() {
+                let existing_window = FindWindowA(
+                    PCSTR::null(),
+                    PCSTR::from_raw(window_name.as_ptr() as *const u8),
+                );
+                
+                if existing_window != HWND(0) {
                     ShowWindow(existing_window, SW_RESTORE);
                     SetForegroundWindow(existing_window);
                 }
@@ -57,11 +67,17 @@ impl WindowInstance {
         // Set window properties
         unsafe {
             let hwnd = GetConsoleWindow();
-            if !hwnd.is_null() {
-                SetWindowLongA(hwnd, GWL_STYLE, GetWindowLongA(hwnd, GWL_STYLE) & !(WS_MAXIMIZEBOX | WS_SIZEBOX) as i32);
-                ShowScrollBar(hwnd, SB_BOTH as i32, 0);
+            if hwnd != HWND(0) {
+                let current_style = GetWindowLongA(hwnd, GWL_STYLE);
+                let new_style = WINDOW_STYLE(
+                    (current_style as u32) & !(WS_MAXIMIZEBOX.0 | WS_SIZEBOX.0)
+                );
+                
+                SetWindowLongA(hwnd, GWL_STYLE, new_style.0 as i32);
+                ShowScrollBar(hwnd, SB_BOTH, false);
+                
                 let title = CString::new(window_title).unwrap();
-                SetWindowTextA(hwnd, title.as_ptr());
+                SetWindowTextA(hwnd, PCSTR::from_raw(title.as_ptr() as *const u8));
             }
         }
 
@@ -74,8 +90,8 @@ impl WindowInstance {
 impl Drop for WindowInstance {
     fn drop(&mut self) {
         unsafe {
-            if self.mutex_handle != INVALID_HANDLE_VALUE {
-                CloseHandle(self.mutex_handle);
+            if self.mutex_handle != HANDLE(0) {
+                CloseHandle(self.mutex_handle).expect("Failed to close mutex handle");
             }
         }
     }
