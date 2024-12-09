@@ -1,5 +1,6 @@
 use crate::direction::{Direction, get_relative_directions};
 use crate::MfdState;
+use crate::head_tracking::is_head_left;
 
 pub fn calculate_osb_number(
     mfd: MfdState,
@@ -23,6 +24,14 @@ pub fn calculate_osb_number(
     let mfd_offset = match mfd {
         MfdState::LeftMfd => 0,
         MfdState::RightMfd => 20,
+        MfdState::DynamicMfd => {
+            // This will need to be replaced with actual head position logic
+            if is_head_left() {
+                0  // Left MFD
+            } else {
+                20 // Right MFD
+            }
+        }
     };
 
     Some(base_number + osb_position + mfd_offset + 1)

@@ -27,12 +27,15 @@ use osb::{calculate_osb_number, could_lead_to_valid_osb};
 mod direction;
 use direction::Direction;
 
+mod head_tracking;
+use head_tracking::HeadTracker;
+
 #[derive(Debug, PartialEq, Clone, Serialize, Deserialize)]
-enum MfdState {
+pub enum MfdState {
     LeftMfd,
     RightMfd,
+    DynamicMfd, // New variant for head-tracking based selection
 }
-
 #[derive(Debug)]
 enum AppState {
     WaitingForSide {
@@ -243,6 +246,19 @@ fn handle_binding(button_id: u32, device_id: u32, app_state: &mut AppState, ui: 
     }
 }
 
+fn update_dynamic_mfd(app_state: &mut AppState) {
+    if let AppState::WaitingForSide { mfd: MfdState::DynamicMfd } = app_state {
+        let is_left = head_tracking::is_head_left();
+        *app_state = AppState::WaitingForSide {
+            mfd: if is_left {
+                MfdState::LeftMfd
+            } else {
+                MfdState::RightMfd
+            }
+        };
+    }
+}
+
 #[tokio::main]
 async fn main() -> io::Result<()> {
     // Create UI first - this handles single instance check
@@ -386,6 +402,30 @@ async fn main() -> io::Result<()> {
                 Event::Mouse(MouseEvent { kind, column, row, .. }) => {
                     match kind {
                         MouseEventKind::Down(_) => {
+                            if ui.is_mfdsel_button_click(column, row) {
+                                if let Ok(mut config_lock) = CONFIG.lock() {
+                                    if let Some(config) = config_lock.as_mut() {
+                                        config.use_openxr = !config.use_openxr;
+                                        save_config(&config);
+                                        
+                                        // Update app_state to reflect the new MFD mode
+                                        app_state = AppState::WaitingForSide {
+                                            mfd: if config.use_openxr {
+                                                MfdState::DynamicMfd
+                                            } else {
+                                                // Keep the previous MFD side if switching back to fixed
+                                                match app_state {
+                                                    AppState::WaitingForSide { mfd: MfdState::DynamicMfd } => MfdState::LeftMfd,
+                                                    AppState::WaitingForSide { mfd } => mfd,
+                                                    _ => MfdState::LeftMfd,
+                                                }
+                                            }
+                                        };
+                                        
+                                        ui.update(&app_state)?;
+                                    }
+                                }
+                            }
                             if ui.is_bind_button_click(column, row) {
                                 match app_state {
                                     AppState::BindingMode { .. } => {
@@ -422,6 +462,16 @@ async fn main() -> io::Result<()> {
                     }
                 }
                 _ => {}
+            }
+        }
+
+        // Add head position checking
+        if let Ok(config_lock) = CONFIG.lock() {
+            if let Some(config) = config_lock.as_ref() {
+                if config.use_openxr {
+                    update_dynamic_mfd(&mut app_state);
+                    ui.update(&app_state)?;
+                }
             }
         }
 

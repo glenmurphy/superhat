@@ -20,6 +20,8 @@ windows = { version = "0.48", features = [
     "Win32_Security",
     "Win32_UI_Controls"
 ]}
+openxr = "0.19.0"
+lazy_static = "1.4.0"
 
 [profile.release]
 # binary size reduction from https://github.com/johnthagen/min-sized-rust

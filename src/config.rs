@@ -9,6 +9,7 @@ pub struct Config {
     pub button_bindings: ButtonBindings,
     pub selected_mfd: MfdState,
     pub sound_enabled: bool,
+    pub use_openxr: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -30,6 +31,7 @@ impl Default for Config {
             },
             selected_mfd: MfdState::LeftMfd,
             sound_enabled: true,
+            use_openxr: false,
         }
     }
 }

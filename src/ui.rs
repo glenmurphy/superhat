@@ -64,6 +64,12 @@ const SOUND_TEXT_Y: u16 = CONSOLE_HEIGHT - 2;
 const SOUND_ON_TEXT: &str = "[SOUND:ON]";
 const SOUND_OFF_TEXT: &str = "[SOUND:OFF]";
 
+// Add these constants near the other UI constants
+const MFDSEL_TEXT_X: u16 = 15;  // Position it after the sound button
+const MFDSEL_TEXT_Y: u16 = CONSOLE_HEIGHT - 2;
+const MFDSEL_DYNAMIC_TEXT: &str = "[DYNAMIC]";
+const MFDSEL_FIXED_TEXT: &str = "[FIXED]";
+
 impl Ui {
     pub fn new() -> io::Result<Self> {
         let window = WindowInstance::new("Superhat")?;
@@ -107,6 +113,10 @@ impl Ui {
                     MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None },
                     MfdDisplay { active_side: Some(Direction::Up), highlighted_button: None, pressed_osb: None }
                 ),
+                MfdState::DynamicMfd => (
+                    MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None },
+                    MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None }
+                ),
             },
             AppState::SelectingOSB { mfd, side, inputs, .. } => {
                 let highlighted = if inputs.is_empty() {
@@ -133,6 +143,10 @@ impl Ui {
                         MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None },
                         MfdDisplay { active_side: Some(*side), highlighted_button: highlighted, pressed_osb: None }
                     ),
+                    MfdState::DynamicMfd => (
+                        MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None },
+                        MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None }
+                    ),
                 }
             },
             AppState::OSBPressed { mfd, osb_number } => match mfd {
@@ -143,6 +157,10 @@ impl Ui {
                 MfdState::RightMfd => (
                     MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None },
                     MfdDisplay { active_side: Some(Direction::Up), highlighted_button: None, pressed_osb: Some(*osb_number) }
+                ),
+                MfdState::DynamicMfd => (
+                    MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None },
+                    MfdDisplay { active_side: None, highlighted_button: None, pressed_osb: None }
                 ),
             },
             _ => (
@@ -166,6 +184,9 @@ impl Ui {
 
         // Draw the sound button (add this before the final flush)
         self.draw_sound_button()?;
+
+        // Draw the OpenXR mode button (add this before the final flush)
+        self.draw_mfdsel_mode_button()?;
 
         self.stdout.flush()?;
         Ok(())
@@ -352,6 +373,25 @@ impl Ui {
         x >= SOUND_TEXT_X && 
         x < SOUND_TEXT_X + SOUND_ON_TEXT.len() as u16 && 
         y == SOUND_TEXT_Y
+    }
+
+    fn draw_mfdsel_mode_button(&mut self) -> io::Result<()> {
+        self.stdout.queue(cursor::MoveTo(MFDSEL_TEXT_X, MFDSEL_TEXT_Y))?;
+        
+        // Get the current MFD state from the app state
+        let text = match crate::MfdState::DynamicMfd {
+            crate::MfdState::DynamicMfd => MFDSEL_DYNAMIC_TEXT,
+            _ => MFDSEL_FIXED_TEXT,
+        };
+        
+        write!(self.stdout, "{}", style::style(text).with(Color::Grey))?;
+        Ok(())
+    }
+
+    pub fn is_mfdsel_button_click(&self, x: u16, y: u16) -> bool {
+        x >= MFDSEL_TEXT_X && 
+        x < MFDSEL_TEXT_X + MFDSEL_DYNAMIC_TEXT.len() as u16 && // Use DYNAMIC text length as both options are same length
+        y == MFDSEL_TEXT_Y
     }
 }
 
