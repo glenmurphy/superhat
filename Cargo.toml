@@ -12,6 +12,7 @@ toml = "0.8"
 crossterm = "0.27"
 winapi = { version = "0.3", features = ["wincon", "winuser", "consoleapi", "processenv", "handleapi", "minwindef", "errhandlingapi", "synchapi"] }
 rodio = "0.20.1"
+lazy_static = "1.4"
 
 [profile.release]
 # binary size reduction from https://github.com/johnthagen/min-sized-rust

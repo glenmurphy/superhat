@@ -1012,6 +1012,7 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "gilrs",
+ "lazy_static",
  "rodio",
  "serde",
  "tokio",
