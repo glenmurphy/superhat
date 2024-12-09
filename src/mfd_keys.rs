@@ -1,5 +1,6 @@
 use winky::Key;
 
+// These are the default keys for the OSBs in BMS 4.37
 pub static MFD_KEYS: &[&[Key]] = &[
     &[Key::Control, Key::Alt, Key::Num1],
     &[Key::Control, Key::Alt, Key::Num2], 
