@@ -17,6 +17,8 @@ use ui::Ui;
 #[cfg(test)]
 mod tests;
 mod winstance;
+mod sound;
+use sound::{ClickSound, play_click};
 
 #[derive(Debug, PartialEq, Clone)]
 enum MfdState {
@@ -109,8 +111,14 @@ fn handle_input_event(
         (InputEventType::LongPress, AppState::WaitingForSide { .. }) => {
             if let Direction::Left | Direction::Right = direction {
                 let selected_mfd = match direction {
-                    Direction::Left => MfdState::LeftMfd,
-                    Direction::Right => MfdState::RightMfd,
+                    Direction::Left => {
+                        play_click(ClickSound::Left);
+                        MfdState::LeftMfd
+                    },
+                    Direction::Right => {
+                        play_click(ClickSound::Right);
+                        MfdState::RightMfd
+                    },
                     _ => unreachable!(),
                 };
                 // Immediately update the state when long press is detected
